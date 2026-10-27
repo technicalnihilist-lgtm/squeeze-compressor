@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#070b16">
+<title>Squeeze</title>
+<style>
+:root{
+  --bg:#080e1c;
+  --txt:#eef2ff;
+  --dim:#8b96b5;
+  --mint:#5eead4;
+  --sky:#38bdf8;
+  --violet:#a78bfa;
+  --pink:#f472b6;
+  --glass:rgba(255,255,255,.055);
+  --glass2:rgba(255,255,255,.085);
+  --stroke:rgba(255,255,255,.11);
+  --stroke2:rgba(255,255,255,.18);
+  --shadow:0 18px 40px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:
+    radial-gradient(130% 55% at 18% -6%, rgba(56,189,248,.30), transparent 62%),
+    radial-gradient(120% 50% at 88% 4%, rgba(167,139,250,.26), transparent 60%),
+    radial-gradient(140% 60% at 50% 108%, rgba(94,234,212,.20), transparent 66%),
+    var(--bg);
+  background-attachment:fixed;color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  overflow:hidden;letter-spacing:-.01em;
+  -webkit-font-smoothing:antialiased;
+}
+/* ---------- ambient liquid backdrop ---------- */
+.bg{position:fixed;inset:-25%;z-index:0;filter:blur(72px) saturate(150%);opacity:1;pointer-events:none}
+.blob{position:absolute;border-radius:50%;mix-blend-mode:screen;animation:float 18s ease-in-out infinite}
+.b1{width:64vw;height:64vw;left:-16vw;top:-8vh;background:radial-gradient(circle at 32% 32%,rgba(56,189,248,1),rgba(56,189,248,.28) 46%,transparent 74%)}
+.b2{width:66vw;height:66vw;right:-22vw;top:6vh;background:radial-gradient(circle at 58% 42%,rgba(167,139,250,.95),rgba(167,139,250,.26) 46%,transparent 74%);animation-delay:-6s}
+.b3{width:70vw;height:70vw;left:-10vw;bottom:-20vh;background:radial-gradient(circle at 40% 58%,rgba(94,234,212,.8),rgba(94,234,212,.22) 46%,transparent 74%);animation-delay:-11s}
+.b4{width:44vw;height:44vw;right:-8vw;bottom:4vh;background:radial-gradient(circle at 50% 50%,rgba(244,114,182,.7),rgba(244,114,182,.18) 46%,transparent 74%);animation-delay:-3s}
+@keyframes float{0%,100%{transform:translate3d(0,0,0) scale(1)}33%{transform:translate3d(4vw,-3vh,0) scale(1.08)}66%{transform:translate3d(-3vw,3vh,0) scale(.95)}}
+.grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.04;
+  background-image:radial-gradient(rgba(255,255,255,.9) .5px,transparent .5px);background-size:3px 3px}
+.sheen{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),transparent 22%,transparent 74%,rgba(0,0,0,.42))}
+
+/* ---------- shell ---------- */
+.app{position:relative;z-index:2;height:100%;display:flex;flex-direction:column}
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:calc(env(safe-area-inset-top,0px) + 18px) 18px 8px;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+
+/* header */
+.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.brand{display:flex;align-items:center;gap:11px}
+.mark{width:40px;height:40px;border-radius:13px;position:relative;display:grid;place-items:center;
+  background:linear-gradient(150deg,rgba(255,255,255,.22),rgba(255,255,255,.05));
+  border:1px solid var(--stroke2);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 8px 20px rgba(0,0,0,.4)}
+.mark:after{content:"";position:absolute;inset:0;border-radius:13px;
+  background:linear-gradient(150deg,rgba(94,234,212,.35),transparent 55%);opacity:.9}
+.mark svg{position:relative;z-index:1}
+.brand h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.03em}
+.brand p{margin:1px 0 0;font-size:11.5px;color:var(--dim);font-weight:500;letter-spacing:0}
+.icon-btn{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;cursor:pointer;
+  background:var(--glass);border:1px solid var(--stroke);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  transition:transform .18s ease,background .18s ease}
+.icon-btn:active{transform:scale(.92);background:var(--glass2)}
+
+/* ---------- glass card ---------- */
+.card{position:relative;border-radius:22px;padding:16px;
+  background:linear-gradient(160deg,rgba(255,255,255,.115),rgba(255,255,255,.045));
+  border:1px solid var(--stroke);backdrop-filter:blur(26px) saturate(160%);-webkit-backdrop-filter:blur(26px) saturate(160%);
+  box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.18)}
+.card+.card{margin-top:14px}
+.label{font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--dim)}
+
+/* target size */
+.target-row{display:flex;align-items:flex-end;justify-content:space-between;margin-top:6px}
+.target-val{display:flex;align-items:baseline;gap:6px}
+.target-val b{font-size:38px;font-weight:700;letter-spacing:-.045em;line-height:1;
+  background:linear-gradient(120deg,#fff,#bfe9ff 45%,var(--mint));-webkit-background-clip:text;background-clip:text;color:transparent}
+.target-val span{font-size:15px;font-weight:600;color:var(--dim)}
+.pill{font-size:11px;font-weight:600;color:#062e2a;padding:6px 10px;border-radius:999px;
+  background:linear-gradient(120deg,var(--mint),var(--sky));box-shadow:0 6px 16px rgba(56,189,248,.28)}
+.chips{display:flex;gap:7px;margin-top:14px;flex-wrap:wrap}
+.chip{flex:1;min-width:0;padding:9px 0;text-align:center;border-radius:12px;font-size:12.5px;font-weight:600;
+  color:var(--dim);background:rgba(255,255,255,.05);border:1px solid var(--stroke);cursor:pointer;
+  transition:all .18s ease}
+.chip:active{transform:scale(.95)}
+.chip.on{color:#04121a;background:linear-gradient(120deg,var(--mint),var(--sky));border-color:transparent;
+  box-shadow:0 8px 20px rgba(56,189,248,.3)}
+
+/* segmented mode */
+.seg{display:flex;gap:5px;margin-top:12px;padding:5px;border-radius:15px;background:rgba(0,0,0,.28);
+  border:1px solid rgba(255,255,255,.07)}
+.seg button{flex:1;padding:9px 4px;border:0;border-radius:11px;background:transparent;color:var(--dim);
+  font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;transition:all .2s ease;letter-spacing:-.01em}
+.seg button.on{color:#fff;background:linear-gradient(150deg,rgba(255,255,255,.2),rgba(255,255,255,.07));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 4px 14px rgba(0,0,0,.35)}
+.hint{margin:11px 2px 0;font-size:11.5px;line-height:1.5;color:var(--dim)}
+
+/* ---------- add button ---------- */
+.add{width:100%;margin-top:14px;padding:17px;border-radius:20px;cursor:pointer;display:flex;align-items:center;
+  justify-content:center;gap:9px;font-family:inherit;font-size:14.5px;font-weight:650;color:#04121a;
+  background:linear-gradient(120deg,var(--mint) 0%,var(--sky) 55%,var(--violet) 130%);
+  border:0;box-shadow:0 14px 34px rgba(56,189,248,.32),inset 0 1px 0 rgba(255,255,255,.5);
+  transition:transform .18s ease,filter .18s ease}
+.add:active{transform:scale(.975);filter:brightness(1.06)}
+.add svg{flex:none}
+
+/* ---------- queue ---------- */
+.qhead{display:flex;align-items:center;justify-content:space-between;margin:20px 4px 10px}
+.qhead .label{letter-spacing:.09em}
+.count{font-size:11px;font-weight:600;color:var(--dim)}
+.file{display:flex;align-items:center;gap:12px;padding:12px;border-radius:18px;margin-bottom:9px;
+  background:linear-gradient(150deg,rgba(255,255,255,.075),rgba(255,255,255,.028));
+  border:1px solid var(--stroke);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.13);animation:in .35s cubic-bezier(.2,.8,.3,1) both}
+@keyframes in{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+.badge{width:42px;height:42px;border-radius:13px;flex:none;display:grid;place-items:center;position:relative;
+  font-size:9px;font-weight:800;letter-spacing:.02em;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.badge i{position:absolute;inset:0;border-radius:13px;opacity:.9}
+.badge span{position:relative;z-index:1}
+.b-vid{background:linear-gradient(150deg,#7c3aed,#a78bfa)}
+.b-img{background:linear-gradient(150deg,#0ea5e9,#5eead4)}
+.b-aud{background:linear-gradient(150deg,#f472b6,#fb7185)}
+.b-doc{background:linear-gradient(150deg,#f59e0b,#fbbf24)}
+.b-zip{background:linear-gradient(150deg,#10b981,#34d399)}
+.b-any{background:linear-gradient(150deg,#64748b,#94a3b8)}
+.fmain{flex:1;min-width:0}
+.fname{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fmeta{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+.fmeta b{color:var(--mint);font-weight:600}
+.arrow{color:rgba(255,255,255,.28)}
+.saved{font-size:10.5px;font-weight:700;color:var(--mint);padding:3px 7px;border-radius:8px;
+  background:rgba(94,234,212,.13);border:1px solid rgba(94,234,212,.25);white-space:nowrap}
+.bar{height:4px;border-radius:99px;background:rgba(255,255,255,.1);margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;width:0;
+  background:linear-gradient(90deg,var(--mint),var(--sky));transition:width .3s ease}
+.file.done .bar{display:none}
+.spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.2);
+  border-top-color:var(--mint);animation:sp .8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.empty{padding:26px 12px;text-align:center;color:var(--dim);font-size:12.5px;line-height:1.6;
+  border:1px dashed rgba(255,255,255,.14);border-radius:20px;background:rgba(255,255,255,.02)}
+
+/* ---------- footer ---------- */
+.foot{position:relative;z-index:3;padding:12px 18px calc(env(safe-area-inset-bottom,0px) + 14px);
+  background:linear-gradient(180deg,rgba(6,10,20,0),rgba(6,10,20,.86) 34%,rgba(6,10,20,.97));
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid rgba(255,255,255,.07)}
+.totals{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:11.5px;color:var(--dim)}
+.totals b{color:var(--txt);font-weight:650;font-variant-numeric:tabular-nums}
+.totals .sav{color:var(--mint);font-weight:700}
+.go{width:100%;padding:16px;border-radius:18px;border:0;font-family:inherit;font-size:15px;font-weight:700;
+  color:#04121a;cursor:pointer;letter-spacing:-.02em;
+  background:linear-gradient(120deg,var(--mint),var(--sky) 60%,var(--violet));
+  box-shadow:0 14px 34px rgba(56,189,248,.3),inset 0 1px 0 rgba(255,255,255,.5);
+  transition:transform .18s ease,opacity .2s}
+.go:active{transform:scale(.98)}
+.go[disabled]{opacity:.4;box-shadow:none}
+
+/* ---------- sheets ---------- */
+.scrim{position:fixed;inset:0;z-index:20;background:rgba(2,5,12,.6);backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .28s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;border-radius:26px 26px 0 0;padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 20px);
+  background:linear-gradient(180deg,rgba(26,32,52,.96),rgba(12,16,28,.99));
+  border-top:1px solid var(--stroke2);box-shadow:0 -20px 60px rgba(0,0,0,.6);
+  transform:translateY(102%);transition:transform .34s cubic-bezier(.22,.9,.28,1)}
+.sheet.on{transform:none}
+.grab{width:38px;height:4px;border-radius:9px;background:rgba(255,255,255,.22);margin:6px auto 16px}
+.sheet h3{margin:0 0 4px;font-size:17px;font-weight:700;letter-spacing:-.03em}
+.sheet p.sub{margin:0 0 16px;font-size:12px;color:var(--dim);line-height:1.5}
+.row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:13.5px}
+.row:last-of-type{border-bottom:0}
+.row .k{color:var(--txt);font-weight:550}
+.row .v{color:var(--dim);font-size:12.5px}
+.sw{width:46px;height:27px;border-radius:99px;background:rgba(255,255,255,.14);position:relative;cursor:pointer;transition:background .2s}
+.sw:after{content:"";position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:transform .22s cubic-bezier(.3,1.4,.5,1);box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.sw.on{background:linear-gradient(120deg,var(--mint),var(--sky))}
+.sw.on:after{transform:translateX(19px)}
+.sheet-btn{width:100%;margin-top:16px;padding:15px;border-radius:16px;border:1px solid var(--stroke2);
+  background:var(--glass2);color:var(--txt);font-family:inherit;font-size:14px;font-weight:650;cursor:pointer}
+
+/* done card */
+.done-card{text-align:center;padding:8px 6px 0}
+.tick{width:66px;height:66px;margin:2px auto 14px;border-radius:50%;display:grid;place-items:center;
+  background:linear-gradient(140deg,rgba(94,234,212,.25),rgba(56,189,248,.12));
+  border:1px solid rgba(94,234,212,.4);box-shadow:0 0 40px rgba(94,234,212,.25),inset 0 1px 0 rgba(255,255,255,.3)}
+.done-card h3{font-size:20px}
+.stat-grid{display:flex;gap:9px;margin:16px 0 0}
+.stat{flex:1;padding:12px 8px;border-radius:15px;background:rgba(255,255,255,.05);border:1px solid var(--stroke)}
+.stat b{display:block;font-size:16px;font-weight:700;letter-spacing:-.03em}
+.stat span{display:block;margin-top:3px;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 96px);transform:translate(-50%,14px);
+  z-index:40;padding:11px 16px;border-radius:14px;font-size:12.5px;font-weight:600;color:var(--txt);
+  background:rgba(28,34,54,.95);border:1px solid var(--stroke2);box-shadow:var(--shadow);
+  opacity:0;pointer-events:none;transition:all .25s ease;max-width:88vw;text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div class="bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div></div>
+<div class="grain"></div><div class="sheen"></div>
+
+<div class="app">
+  <div class="scroll" id="scroll">
+    <div class="top">
+      <div class="brand">
+        <div class="mark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#eafcff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 8h6M4 16h6M20 8h-6M20 16h-6"/><path d="M9.5 5.5 12 8l-2.5 2.5M14.5 13.5 12 16l2.5 2.5"/>
+          </svg>
+        </div>
+        <div><h1>Squeeze</h1><p>Every format. One size fits.</p></div>
+      </div>
+      <div class="icon-btn" onclick="openSheet('settings')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dfe7ff" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-2.87 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 3 15a1.7 1.7 0 0 0-1.2-2.87H1.7a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 3.6 7a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8 2.6a1.7 1.7 0 0 0 1-1.55V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.87 1.2 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 21 8v.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 2.9z" transform="translate(1.2 1.2) scale(.92)"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- target -->
+    <div class="card">
+      <div class="target-row">
+        <div>
+          <div class="label">Compress down to</div>
+          <div class="target-val"><b id="tval">150</b><span>MB</span></div>
+        </div>
+        <div class="pill" id="tpill">Hard cap</div>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="seg" id="seg">
+        <button data-mode="lossless">Lossless</button>
+        <button data-mode="balanced" class="on">Balanced</button>
+        <button data-mode="smallest">Smallest</button>
+      </div>
+      <div class="hint" id="modehint">Visually lossless — video keeps full frame rate and audio is copied bit-for-bit.</div>
+    </div>
+
+    <button class="add" onclick="pick()">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#04121a" stroke-width="2.4" stroke-linecap="round">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+      Add files or a whole folder
+    </button>
+
+    <div class="qhead">
+      <div class="label">Queue</div>
+      <div class="count" id="count">nothing queued</div>
+    </div>
+    <div id="queue"></div>
+    <div style="height:14px"></div>
+  </div>
+
+  <div class="foot">
+    <div class="totals">
+      <div><b id="sumIn">0 MB</b> <span style="opacity:.5">→</span> <b id="sumOut">0 MB</b></div>
+      <div class="sav" id="sumSav">fits any size</div>
+    </div>
+    <button class="go" id="go" disabled onclick="start()">Add files to begin</button>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" onclick="closeSheets()"></div>
+
+<!-- settings -->
+<div class="sheet" id="sheet-settings">
+  <div class="grab"></div>
+  <h3>Settings</h3>
+  <p class="sub">Everything runs on this device. No uploads, no account, no limits on queue size.</p>
+  <div class="row"><span class="k">Keep original files</span><span class="sw on" id="sw-keep" onclick="toggle('keep')"></span></div>
+  <div class="row"><span class="k">Max video resolution</span><span class="v" id="v-res">1920 × 1080</span></div>
+  <div class="row"><span class="k">Strip metadata</span><span class="sw on" id="sw-strip" onclick="toggle('strip')"></span></div>
+  <div class="row"><span class="k">Output folder</span><span class="v">Downloads / Squeeze</span></div>
+  <div class="row"><span class="k">Free space</span><span class="v" id="v-free">—</span></div>
+  <button class="sheet-btn" onclick="closeSheets()">Done</button>
+</div>
+
+<!-- done -->
+<div class="sheet" id="sheet-done">
+  <div class="grab"></div>
+  <div class="done-card">
+    <div class="tick">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#5eead4" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+    </div>
+    <h3>Squeezed.</h3>
+    <p class="sub" style="margin-top:6px" id="doneSub">4 files saved to Downloads / Squeeze</p>
+    <div class="stat-grid">
+      <div class="stat"><b id="dFiles">4</b><span>Files</span></div>
+      <div class="stat"><b id="dSaved">2.9 GB</b><span>Saved</span></div>
+      <div class="stat"><b id="dPct">85%</b><span>Smaller</span></div>
+    </div>
+  </div>
+  <button class="sheet-btn" style="background:linear-gradient(120deg,var(--mint),var(--sky));color:#04121a;border:0;font-weight:700" onclick="closeSheets()">Open output folder</button>
+  <button class="sheet-btn" onclick="reset()">Compress more</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ------------------------------------------------------------------ */
+/*  Squeeze — UI layer. Talks to the native engine through window.Native */
+/* ------------------------------------------------------------------ */
+const S = {
+  targetMB: 150,
+  mode: 'balanced',
+  maxDim: 1920,
+  keepOriginal: true,
+  stripMeta: true,
+  files: [],
+  running: false,
+  done: false
+};
+
+const TARGETS = [50, 100, 150, 250, 500];
+const MODE_HINT = {
+  lossless: 'Bit-for-bit where the format allows. Photos stay pixel-identical, archives are re-deflated, nothing is re-encoded lossily.',
+  balanced: 'Visually lossless — video keeps full frame rate and audio is copied bit-for-bit.',
+  smallest: 'Smallest possible file. Slightly softer video and photos, still very watchable.'
+};
+const RES = {0: 'Original', 1080: '1920 × 1080', 720: '1280 × 720', 480: '854 × 480'};
+
+const $ = id => document.getElementById(id);
+
+/* ---------- formatting ---------- */
+function fmt(b){
+  if(!b || b < 1) return '0 B';
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0, n = b;
+  while(n >= 1024 && i < u.length - 1){ n /= 1024; i++; }
+  return (n >= 100 || i === 0 ? Math.round(n) : n.toFixed(1)) + ' ' + u[i];
+}
+function kindOf(name){
+  const e = (name.split('.').pop() || '').toLowerCase();
+  if(['mp4','mkv','mov','webm','avi','3gp','m4v','ts','flv','wmv'].includes(e)) return ['vid', e.toUpperCase()];
+  if(['jpg','jpeg','png','webp','heic','heif','bmp','gif','tiff','avif'].includes(e)) return ['img', e.toUpperCase()];
+  if(['mp3','m4a','aac','wav','flac','ogg','opus','amr'].includes(e)) return ['aud', e.toUpperCase()];
+  if(['pdf','docx','xlsx','pptx','txt','epub'].includes(e)) return ['doc', e.toUpperCase()];
+  if(['zip','rar','7z','tar','gz'].includes(e)) return ['zip', e.toUpperCase()];
+  return ['any', e ? e.toUpperCase().slice(0,4) : 'FILE'];
+}
+
+/* ---------- target chips ---------- */
+function renderChips(){
+  $('chips').innerHTML = TARGETS.map(t =>
+    `<div class="chip ${t === S.targetMB ? 'on' : ''}" onclick="setTarget(${t})">${t} MB</div>`).join('');
+  $('tval').textContent = S.targetMB;
+}
+function setTarget(t){
+  S.targetMB = t;
+  renderChips();
+  $('tpill').textContent = t >= 500 ? 'Room to spare' : 'Hard cap';
+  recalc();
+}
+
+/* ---------- modes ---------- */
+$('seg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  S.mode = b.dataset.mode;
+  [...$('seg').children].forEach(x => x.classList.toggle('on', x === b));
+  $('modehint').textContent = MODE_HINT[S.mode];
+});
+
+/* ---------- queue ---------- */
+function renderQueue(){
+  const q = $('queue');
+  if(!S.files.length){
+    q.innerHTML = `<div class="empty">No files yet.<br>Photos, video, audio, PDFs, archives — add anything.</div>`;
+    $('count').textContent = 'nothing queued';
+    return;
+  }
+  q.innerHTML = S.files.map((f, i) => {
+    const [cls, tag] = kindOf(f.name);
+    const pct = f.size && f.out ? Math.round((1 - f.out / f.size) * 100) : 0;
+    const done = f.status === 'done';
+    const meta = done
+      ? `<div class="fmeta"><span>${fmt(f.size)}</span><span class="arrow">→</span><b>${fmt(f.out)}</b></div>`
+      : `<div class="fmeta"><span>${fmt(f.size)}</span>${f.status === 'working' ? `<span class="arrow">·</span><span>${Math.round(f.progress || 0)}%</span>` : `<span class="arrow">·</span><span>waiting</span>`}</div>`;
+    return `<div class="file ${done ? 'done' : ''}" style="animation-delay:${i * 40}ms">
+      <div class="badge b-${cls}"><span>${tag}</span></div>
+      <div class="fmain">
+        <div class="fname">${f.name}</div>
+        ${meta}
+        ${f.status === 'working' ? `<div class="bar"><i style="width:${f.progress || 0}%"></i></div>` : ''}
+      </div>
+      ${done ? `<div class="saved">−${pct}%</div>`
+             : f.status === 'working' ? `<div class="spin"></div>` : ''}
+    </div>`;
+  }).join('');
+  $('count').textContent = S.files.length + (S.files.length === 1 ? ' file' : ' files');
+}
+
+function recalc(){
+  const total = S.files.length;
+  const inB = S.files.reduce((a, f) => a + (f.size || 0), 0);
+  const outB = S.files.reduce((a, f) => a + (f.out || f.size || 0), 0);
+  $('sumIn').textContent = fmt(inB);
+  $('sumOut').textContent = fmt(outB);
+  const pct = inB ? Math.round((1 - outB / inB) * 100) : 0;
+  $('sumSav').textContent = total && pct > 0 ? `saving ${pct}%` : 'fits any size';
+  const go = $('go');
+  go.disabled = !total || S.running;
+  go.textContent = S.running ? `Compressing… ${S.files.filter(f => f.status === 'done').length}/${total}`
+                             : total ? `Compress ${total} ${total === 1 ? 'file' : 'files'}` : 'Add files to begin';
+}
+
+/* ---------- sheets ---------- */
+function openSheet(id){
+  $('scrim').classList.add('on');
+  $('sheet-' + id).classList.add('on');
+}
+function closeSheets(){
+  $('scrim').classList.remove('on');
+  document.querySelectorAll('.sheet').forEach(s => s.classList.remove('on'));
+}
+function toggle(k){
+  if(k === 'keep'){ S.keepOriginal = !S.keepOriginal; $('sw-keep').classList.toggle('on', S.keepOriginal); }
+  if(k === 'strip'){ S.stripMeta = !S.stripMeta; $('sw-strip').classList.toggle('on', S.stripMeta); }
+  pushSettings();
+}
+function pushSettings(){
+  const cfg = { mode: S.mode, targetMB: S.targetMB, maxDim: S.maxDim, keepOriginal: S.keepOriginal, stripMeta: S.stripMeta };
+  if(window.Native && window.Native.configure) window.Native.configure(JSON.stringify(cfg));
+}
+
+let toastT;
+function toast(msg){
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2200);
+}
+
+/* ---------- native bridge ---------- */
+function pick(){
+  if(window.Native) window.Native.pickFiles();
+  else { addDemo(); toast('Demo mode — add files from the app'); }
+}
+function start(){
+  if(S.running || !S.files.length) return;
+  S.running = true;
+  S.done = false;
+  S.files.forEach(f => { f.status = 'queued'; f.progress = 0; f.out = 0; });
+  renderQueue(); recalc();
+  pushSettings();
+  if(window.Native) window.Native.start();
+  else demoRun();
+}
+function reset(){
+  S.files = []; S.running = false; S.done = false;
+  closeSheets(); renderQueue(); recalc();
+}
+
+/* called from Java */
+window.Sq = {
+  onFiles(json){
+    const list = JSON.parse(json);
+    list.forEach(f => S.files.push({ name: f.name, size: f.size, out: 0, progress: 0, status: 'queued', uri: f.uri }));
+    renderQueue(); recalc();
+    toast(list.length + (list.length === 1 ? ' file added' : ' files added'));
+  },
+  onProgress(json){
+    const p = JSON.parse(json);
+    const f = S.files[p.index];
+    if(!f) return;
+    f.status = p.status || 'working';
+    f.progress = p.progress || 0;
+    if(p.out) f.out = p.out;
+    renderQueue(); recalc();
+  },
+  onDone(json){
+    const d = JSON.parse(json);
+    S.running = false; S.done = true;
+    if(d.files) d.files.forEach((x, i) => { if(S.files[i]) { S.files[i].status = 'done'; S.files[i].out = x.out || S.files[i].out; } });
+    renderQueue(); recalc();
+    showDone(d);
+  },
+  onError(msg){ S.running = false; recalc(); toast(msg); },
+  onSpace(bytes){ $('v-free').textContent = fmt(bytes); }
+};
+
+function showDone(d){
+  const inB = S.files.reduce((a, f) => a + (f.size || 0), 0);
+  const outB = S.files.reduce((a, f) => a + (f.out || f.size || 0), 0);
+  $('dFiles').textContent = S.files.length;
+  $('dSaved').textContent = fmt(Math.max(0, inB - outB));
+  $('dPct').textContent = inB ? Math.round((1 - outB / inB) * 100) + '%' : '0%';
+  $('doneSub').textContent = S.files.length + ' files saved to Downloads / Squeeze';
+  openSheet('done');
+}
+
+/* ---------- demo / screenshot mode ---------- */
+const DEMO = [
+  { name: 'Vacation_4K_Maldives.mp4', size: 1.94e9, out: 148e6, status: 'done', progress: 100 },
+  { name: 'Wedding_Highlights.mov', size: 2.61e9, out: 149e6, status: 'done', progress: 100 },
+  { name: 'IMG_2048.HEIC', size: 12.4e6, out: 1.9e6, status: 'done', progress: 100 },
+  { name: 'Q3_Board_Deck.pdf', size: 38.2e6, out: 11.1e6, status: 'done', progress: 100 }
+];
+function addDemo(){
+  DEMO.forEach(d => S.files.push({ ...d }));
+  renderQueue(); recalc();
+}
+function demoRun(){
+  let i = 0;
+  const tick = () => {
+    if(i >= S.files.length){
+      S.running = false; S.done = true;
+      S.files.forEach(f => { f.status = 'done'; f.progress = 100; });
+      renderQueue(); recalc(); showDone({}); return;
+    }
+    const f = S.files[i]; f.status = 'working';
+    let p = 0;
+    const step = setInterval(() => {
+      p += 18 + Math.random() * 22;
+      f.progress = Math.min(100, p);
+      if(f.progress >= 100){
+        clearInterval(step);
+        f.status = 'done';
+        f.out = DEMO[i % DEMO.length].out * (0.9 + Math.random() * 0.2);
+        i++; renderQueue(); recalc(); setTimeout(tick, 220);
+      } else { renderQueue(); recalc(); }
+    }, 190);
+  };
+  tick();
+}
+
+/* ---------- boot ---------- */
+(function boot(){
+  const demo = /[?&]demo/.test(location.search) || !window.Native;
+  renderChips(); renderQueue(); recalc();
+  $('modehint').textContent = MODE_HINT[S.mode];
+  if(demo){
+    // screenshot / preview state
+    const stage = (location.search.match(/stage=(\w+)/) || [])[1];
+    if(stage === 'done'){ addDemo(); showDone({}); }
+    else if(stage === 'settings'){ addDemo(); openSheet('settings'); }
+    else if(stage === 'run'){
+      DEMO.forEach((d, i) => S.files.push({ ...d, status: i < 2 ? 'done' : i === 2 ? 'working' : 'queued',
+        progress: i === 2 ? 64 : i < 2 ? 100 : 0, out: i < 2 ? d.out : 0 }));
+      S.running = true;
+      renderQueue(); recalc();
+    } else { addDemo(); }
+  }
+  if(window.Native && window.Native.freeSpace) window.Native.freeSpace();
+})();
+</script>
+</body>
+</html>

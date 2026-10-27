@@ -1,0 +1,4 @@
+android/build/
+*.log
+hs_err_pid*
+.DS_Store
