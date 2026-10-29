@@ -178,29 +178,45 @@ public class MainActivity extends Activity {
             job.stripMeta = cfg.stripMeta;
 
             final int index = i;
-            js(progressJson(index, "working", 0, 0));
+            js(progressJson(index, "working", 0, 0, null));
 
             Engine.Progress cb = new Engine.Progress() {
                 public void on(float f, long out) {
-                    js(progressJson(index, "working", Math.round(f * 100f), out));
+                    js(progressJson(index, "working", Math.round(f * 100f), out, null));
                 }
             };
 
-            Engine.Result r;
+            Engine.Result r = null;
+            String err = null;
             try {
                 r = Engine.compress(MainActivity.this, job, cb);
-            } catch (Exception e) {
-                r = null;
+            } catch (Throwable t) {
+                String m = t.getMessage();
+                err = (m != null && m.length() > 0) ? m : t.getClass().getSimpleName();
             }
-
-            long out = r != null && r.ok ? r.out : job.size;
-            if (r != null && r.ok && job.size > out) totalSaved += (job.size - out);
-            js(progressJson(index, "done", 100, out));
+            if (r != null && !r.ok) err = r.error;
+            if (r == null && err == null) err = "Compression failed";
 
             try {
+                if (err != null) {
+                    // Say what went wrong instead of pretending the file was compressed.
+                    js(progressJson(index, "failed", 100, 0, err));
+                    JSONObject o = new JSONObject();
+                    o.put("out", job.size);
+                    o.put("error", err);
+                    o.put("name", job.name);
+                    results.put(o);
+                    continue;
+                }
+
+                long out = r.out;
+                if (job.size > out) totalSaved += (job.size - out);
+                js(progressJson(index, "done", 100, out, null));
+
                 JSONObject o = new JSONObject();
                 o.put("out", out);
-                o.put("name", r != null && r.name != null ? r.name : job.name);
+                o.put("name", r.name != null ? r.name : job.name);
+                if (r.note != null) o.put("note", r.note);
                 results.put(o);
             } catch (Exception ignored) { }
         }
@@ -212,18 +228,18 @@ public class MainActivity extends Activity {
             js("Sq.onDone(" + JSONObject.quote(done.toString()) + ")");
         } catch (Exception ignored) { }
 
-        queue.clear();
         busy = false;
         keepAwake(false);
     }
 
-    private String progressJson(int index, String status, int pct, long out) {
+    private String progressJson(int index, String status, int pct, long out, String error) {
         try {
             JSONObject o = new JSONObject();
             o.put("index", index);
             o.put("status", status);
             o.put("progress", pct);
             o.put("out", out);
+            if (error != null) o.put("error", error);
             return "Sq.onProgress(" + JSONObject.quote(o.toString()) + ")";
         } catch (Exception e) {
             return "0";
@@ -289,12 +305,13 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void clearQueue() {
+            queue.clear();
+        }
+
+        @JavascriptInterface
         public void freeSpace() {
-            long free = 0;
-            try {
-                free = getFilesDir().getUsableSpace();
-            } catch (Exception ignored) { }
-            js("Sq.onSpace(" + free + ")");
+            js("Sq.onSpace(" + Engine.freeSpace(MainActivity.this) + ")");
         }
 
         @JavascriptInterface

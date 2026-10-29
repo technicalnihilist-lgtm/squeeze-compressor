@@ -16,8 +16,8 @@ fi
 echo "build-tools: $BT"
 echo "android.jar: $AJAR"
 
-VCODE="${VERSION_CODE:-1}"
-VNAME="${VERSION_NAME:-1.0}"
+VCODE="${VERSION_CODE:-2}"
+VNAME="${VERSION_NAME:-1.1}"
 
 rm -rf build && mkdir -p build/gen build/classes build/dex
 

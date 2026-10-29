@@ -1,6 +1,6 @@
 # Squeeze
 
-**A file compressor for Android that takes any format and fits it into the size you pick — 150 MB by default — without throwing quality away.**
+**A file compressor for Android that takes any format and fits it into the size you pick — 20 MB, 150 MB, whatever you need — without throwing quality away.**
 
 Photos, 4K video, audio, PDFs, Office documents and archives all go through one queue. Pick a target, hit compress, and everything lands in `Downloads/Squeeze`. Everything runs on the phone: no uploads, no account, no ads, no file-size limits.
 
@@ -29,7 +29,7 @@ The honest version, format by format. There is no single "compress without losin
 | Format | Lossless mode | Balanced (default) | Smallest |
 |---|---|---|---|
 | **JPG / PNG / HEIC / WebP** | Re-encoded losslessly (WebP lossless / PNG). Pixels are bit-identical, metadata stripped. | Quality 82, downscaled to the resolution cap, stepped down until it fits the target. | Quality 58 and smaller dimensions. |
-| **MP4 / MKV / MOV / WEBM** | Copies the file untouched if it already fits; otherwise high-bitrate H.264. | H.264 re-encode sized to your target. **The audio track is copied bit-for-bit** when it is already AAC. | Lowest bitrate that still looks fine on a phone. |
+| **MP4 / MKV / MOV / WEBM** | Copies the file untouched if it already fits; otherwise high-bitrate H.264. | H.264 re-encode sized to your target, resolution stepped down to fit. **The audio track is copied bit-for-bit** when it already fits the budget. | Lowest resolution and bitrate that still looks fine on a phone. |
 | **MP3 / M4A / FLAC / WAV / OGG** | Original samples preserved, untouched. | AAC at whatever bitrate the target allows. | Same, lower bitrate floor. |
 | **ZIP / DOCX / XLSX / PPTX** | Unpacked and re-deflated at level 9. Truly lossless — the bytes inside are unchanged. | Same. | Same. |
 | **PDF / anything else** | Wrapped in a maximum-deflate ZIP, or stored unchanged if that would make it bigger. | Same. | Same. |
@@ -40,17 +40,26 @@ Two rules it never breaks: it will not hand you a file bigger than the one you g
 
 ## Hitting the target
 
-The 150 MB (or 50/100/250/500) figure is a hard cap, not a wish:
+The 20 / 50 / 100 / 150 / 250 / 500 MB figure is a hard cap, not a wish. Four things make that true:
 
-1. The bitrate is computed from the target, the duration and the audio budget.
-2. The video is transcoded and the result **measured**.
-3. If it overshoots, the whole transcode runs again with the bitrate scaled by the overshoot.
+1. **The budget is split before encoding.** Audio is capped at a quarter of the target (and re-encoded down if it would eat more), and whatever is left becomes the video bitrate. A two-hour video will never quietly spend 900 MB on its audio track.
+2. **Resolution follows the budget.** A bitrate alone cannot put 1080p into 20 MB, so the engine picks the highest resolution whose comfortable bitrate actually fits — 1920 → 854 → 480 — instead of producing mush at full size.
+3. **Every attempt is measured.** The transcode runs, the finished file is read, and if it overshoots the next attempt is scaled by the *real* overshoot.
+4. **The smallest honest result wins.** If even the bottom rung cannot reach the target, you get the smallest file the footage allows and a note telling you what that floor was — never a fake "done" with nothing to show for it.
 
-Images do the same thing by walking quality down in steps and keeping the smallest result. Archives and unknown types fall back to a plain copy if compression would grow the file.
+Images do the same thing by walking quality and dimension down in steps. Archives and unknown types fall back to a plain copy if compression would grow the file.
+
+### When a target is physically impossible
+
+A two-hour film in 20 MB is about 22 kbps of video plus audio — below anything watchable, and below the container's own overhead. Squeeze does not pretend otherwise: it encodes to the lowest sane rung and reports `Smallest reachable is 38 MB`. Short clips hit 20 MB easily; length is the limit, not the format.
 
 ## Big files
 
 Nothing is loaded into memory whole. Inputs are streamed in 64 KB chunks, video frames go through hardware codec surfaces, and audio samples spill to a temp file with an in-memory index. A 4 GB video and a 40 KB photo use the same code path — the only real limits are free disk space and how long you are willing to watch a progress bar.
+
+Files are read through a file descriptor rather than a content URI, which is what makes multi-gigabyte selections from Downloads, an SD card or Google Drive work; and the finished output is written to scratch space first, then moved into Downloads/Squeeze, so a long transcode cannot leave a half-written file behind. Free space is checked before the job starts rather than discovered half-way through.
+
+If something genuinely cannot be compressed, the queue row turns red and says why — "not enough space", "no video track", "smallest reachable is X". Nothing is ever reported as done when no file was produced.
 
 The queue is unlimited; add a hundred files and they run one after another. The screen is kept awake and a wake lock is held while a job runs, so a long transcode does not get killed when the display sleeps.
 

@@ -88,7 +88,7 @@ final class Archiver {
             Engine.Result r = new Engine.Result();
             String outName = Engine.ext(job.name).equals("zip") ? job.name
                     : Engine.base(job.name) + "_squeezed." + Engine.ext(job.name);
-            Engine.writeTempToSink(ctx, job, tmp, outName, p, r);
+            Engine.publishTemp(ctx, job, tmp, outName, Engine.mimeOf(outName), p, r);
             r.note = "Lossless re-compression of " + entries + " entries";
             tmp.delete();
             return r;

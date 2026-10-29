@@ -7,21 +7,33 @@ import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
 import android.net.Uri;
+import android.os.ParcelFileDescriptor;
 import android.view.Surface;
 
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 
 /**
- * Video compression: decode to a surface, re-encode as H.264 at the bitrate the
- * size target allows, and keep the audio track untouched whenever it is already AAC.
+ * Video compression.
  *
- * If the first pass overshoots the target the whole transcode is retried once with a
- * bitrate scaled by the overshoot, so "fit in 150 MB" is met by measurement, not guesswork.
+ * Two things this does that a naive "pick a bitrate and hope" transcoder does not:
+ *
+ * 1. It walks a resolution ladder. When the target is very small (20 MB), no bitrate
+ *    will get a 1080p file there — the frames themselves cost too much — so it steps
+ *    the resolution down (1920 → 854 → 480) and re-tries until it actually fits.
+ * 2. It measures. Each attempt produces a real file, gets its size read, and the next
+ *    attempt is scaled by the actual overshoot rather than by a guess.
+ *
+ * If even the smallest rung cannot reach the target, the smallest result is kept and
+ * the UI is told the true floor instead of failing silently.
+ *
+ * Audio is copied bit-for-bit when it is already AAC, so only the picture is touched.
  */
 final class VideoCompressor {
 
-    private static final int TIMEOUT = 12000; // microseconds
+    private static final int TIMEOUT = 12000;   // microseconds
+    private static final int MAX_ATTEMPTS = 3;
 
     static Engine.Result run(Context ctx, Engine.Job job, Engine.Progress p) throws Exception {
         Src probe = Src.open(ctx, job.uri);
@@ -31,15 +43,15 @@ final class VideoCompressor {
         try {
             if (probe.vIdx < 0 || probe.vf == null) return null;
             MediaFormat vf = probe.vf;
-            MediaFormat af = probe.af;
-            durUs = longOr(vf, MediaFormat.KEY_DURATION, 0);
             sw = intOr(vf, MediaFormat.KEY_WIDTH, 0);
             sh = intOr(vf, MediaFormat.KEY_HEIGHT, 0);
             rot = intOr(vf, MediaFormat.KEY_ROTATION, 0);
             fps = intOr(vf, MediaFormat.KEY_FRAME_RATE, 30);
             srcRate = intOr(vf, MediaFormat.KEY_BIT_RATE, 8_000_000);
-            if (af != null) aRate = intOr(af, MediaFormat.KEY_BIT_RATE, 128000);
+            if (probe.af != null) aRate = intOr(probe.af, MediaFormat.KEY_BIT_RATE, 128000);
             if (sw <= 0 || sh <= 0) return null;
+            // Duration is often missing on MKV/AVI — derive it instead of giving up.
+            durUs = duration(vf, job.size, srcRate);
         } finally {
             probe.close();
         }
@@ -49,62 +61,117 @@ final class VideoCompressor {
         }
 
         int cap = Math.max(240, job.maxDim);
-        double scale = Math.min(1.0, (double) cap / Math.max(sw, sh));
-        int ow = even(Math.round(sw * (float) scale));
-        int oh = even(Math.round(sh * (float) scale));
-        if (ow < 16 || oh < 16) { ow = even(sw); oh = even(sh); }
+        int longest = Math.max(sw, sh);
+        double secs = Math.max(0.5, durUs / 1_000_000.0);
 
-        fps = Math.max(12, Math.min(fps, 60));
-        double secs = Math.max(1.0, durUs / 1_000_000.0);
-        // Audio is either copied or re-encoded at aRate, so reserve exactly that budget.
-        long audioBits = (long) (aRate * secs);
+        // The target is the boss: work out what it allows, then spend it.
+        long targetBits = (long) (job.target * 8 * 0.94);          // 6% for container overhead
+        int audioRate = aRate;
+        long audioShare = (long) (targetBits * 0.25);              // audio may take at most 25%
+        audioRate = (int) Math.min(aRate, Math.max(24000, audioShare / secs));
+        long audioBits = (long) (audioRate * secs);
+        long videoBits = Math.max((long) (20_000 * secs), targetBits - audioBits);
+        int rateNeeded = (int) Math.max(20_000, Math.min(videoBits / secs, srcRate));
 
-        long avail = (long) (job.target * 8 * 0.94) - audioBits;
-        int rate = (int) Math.max(150_000, avail / secs);
-        rate = Math.min(rate, Math.max(200_000, srcRate));
-        rate = Math.min(rate, 20_000_000);
+        int[] rungs = ladder(longest, cap);
+        // Highest resolution whose comfortable bitrate fits the budget; else the lowest rung.
+        int startIdx = rungs.length - 1;
+        for (int i = 0; i < rungs.length; i++) {
+            if (floorFor(rungs[i]) <= rateNeeded) { startIdx = i; break; }
+        }
+
+        File best = null;
+        long bestSize = Long.MAX_VALUE;
+        int bestW = 0, bestH = 0, bestRate = 0;
+        long rate = rateNeeded;
+
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            int dim = rungs[Math.min(startIdx + attempt, rungs.length - 1)];
+            double k = dim / (double) longest;
+            int ow = even(Math.round(sw * (float) k));
+            int oh = even(Math.round(sh * (float) k));
+            if (ow < 16 || oh < 16) continue;
+
+            if (bestSize != Long.MAX_VALUE && bestSize > 0) {
+                // Scale by the real overshoot from the previous attempt.
+                rate = (long) (rate * (job.target / (double) bestSize) * 0.92);
+            }
+            rate = Math.max(20_000, Math.min(rate, srcRate));
+
+            File tmp = Engine.tempFile(ctx, ".mp4");
+            boolean ok;
+            try {
+                ok = encode(ctx, job, tmp, ow, oh, (int) rate, fps, rot, durUs, audioRate, p, attempt, MAX_ATTEMPTS);
+            } catch (Exception e) {
+                tmp.delete();
+                if (attempt == MAX_ATTEMPTS - 1 && best == null) throw e;
+                continue;
+            }
+            if (!ok || tmp.length() <= 0) {
+                tmp.delete();
+                continue;
+            }
+
+            long sz = tmp.length();
+            if (sz < bestSize) {
+                if (best != null) best.delete();
+                best = tmp;
+                bestSize = sz;
+                bestW = ow;
+                bestH = oh;
+                bestRate = (int) rate;
+            } else {
+                tmp.delete();
+            }
+            if (bestSize <= job.target) break;
+        }
+
+        if (best == null) return null;
+
+        // Never hand back something bigger than what came in.
+        if (job.size > 0 && bestSize >= job.size) {
+            best.delete();
+            return Engine.copyRaw(ctx, job, p, "Source is already more efficient — kept as-is");
+        }
 
         String outName = Engine.base(job.name) + "_squeezed.mp4";
-        int attemptRate = rate;
-        long best = -1;
-
-        for (int attempt = 0; attempt < 2; attempt++) {
-            Engine.Sink sink = Engine.Sink.create(ctx, outName, "video/mp4");
-            try {
-                encode(ctx, job, sink, ow, oh, attemptRate, fps, rot, durUs, aRate, p);
-            } catch (Exception e) {
-                sink.delete();
-                if (attempt == 0) return null;
-                throw e;
-            }
-            long out = sink.size();
-            best = out;
-
-            boolean fits = out > 0 && out <= job.target;
-            if (fits || attempt == 1) {
-                if (job.size > 0 && out >= job.size) {
-                    sink.delete();
-                    return Engine.copyRaw(ctx, job, p, "Source already efficient — kept as-is");
-                }
-                sink.publish();
-                Engine.Result r = new Engine.Result();
-                r.ok = true;
-                r.out = out;
-                r.name = outName;
-                r.uri = sink.uri;
-                r.note = "H.264 " + ow + "×" + oh + " · " + (attemptRate / 1000) + " kbps";
-                return r;
-            }
-
-            sink.delete();
-            attemptRate = (int) Math.max(120_000, attemptRate * (job.target / (double) out) * 0.92);
+        Engine.Result r = new Engine.Result();
+        Engine.publishTemp(ctx, job, best, outName, "video/mp4", p, r);
+        r.note = "H.264 " + bestW + "×" + bestH + " · " + (bestRate / 1000) + " kbps";
+        if (bestSize > job.target) {
+            r.note = "Smallest reachable is " + Engine.mb(bestSize)
+                    + " — " + Engine.mb(job.target) + " is below what this footage allows";
         }
-        return null;
+        best.delete();
+        return r;
     }
 
-    private static void encode(Context ctx, Engine.Job job, Engine.Sink sink, int ow, int oh,
-                               int vRate, int fps, int rot, long durUs, int aRate,
-                               Engine.Progress p) throws Exception {
+    /**
+     * Resolution rungs to try, biggest first. Capped at three attempts so a long
+     * video does not turn into a half-hour wait.
+     */
+    private static int[] ladder(int longest, int cap) {
+        int start = Math.min(longest, cap);
+        start = start - (start % 2);
+        int mid = start > 900 ? 854 : start - (start % 2);
+        int low = 480;
+        if (start <= 480) return new int[]{start};
+        if (mid >= start || mid <= low) return new int[]{start, low};
+        return new int[]{start, mid, low};
+    }
+
+    /** Roughly the lowest bitrate that still looks acceptable at a given width. */
+    private static long floorFor(int dim) {
+        if (dim >= 1920) return 1_400_000;
+        if (dim >= 1280) return 900_000;
+        if (dim >= 854) return 500_000;
+        if (dim >= 640) return 320_000;
+        return 200_000;
+    }
+
+    private static boolean encode(Context ctx, Engine.Job job, File out, int ow, int oh,
+                                  int vRate, int fps, int rot, long durUs, int aRate,
+                                  Engine.Progress p, int attempt, int total) throws Exception {
         Src src = Src.open(ctx, job.uri);
         AudioBag bag = null;
         MediaCodec enc = null, dec = null;
@@ -115,21 +182,24 @@ final class VideoCompressor {
         try {
             if (src.vIdx < 0 || src.vf == null) throw new IllegalStateException("No video track");
 
-            // 1. Collect the audio track first (copied, or re-encoded when not AAC).
+            // Phase 1 — collect audio (copied when AAC, re-encoded otherwise).
+            float base = total <= 1 ? 0.05f : 0.05f + (attempt * 0.03f);
             if (src.aIdx >= 0 && src.af != null) {
                 try {
-                    if (AudioBag.isAac(src.af)) {
-                        bag = AudioBag.passthrough(src.ex, src.aIdx, src.af, ctx.getCacheDir(), p, 0.02f, 0.14f);
+                    int srcAudio = intOr(src.af, MediaFormat.KEY_BIT_RATE, 128000);
+                    if (AudioBag.isAac(src.af) && aRate >= srcAudio) {
+                        // Already small enough: copy the samples bit-for-bit.
+                        bag = AudioBag.passthrough(src.ex, src.aIdx, src.af, Engine.workDir(ctx), p, base, base + 0.08f);
                     } else {
                         bag = AudioBag.transcode(ctx, src.ex, src.aIdx, src.af,
-                                Math.min(aRate, 160000), ctx.getCacheDir(), p, 0.02f, 0.14f);
+                                Math.min(aRate, 160000), Engine.workDir(ctx), p, base, base + 0.08f);
                     }
                 } catch (Exception e) {
-                    bag = null; // keep the video even if audio could not be carried over
+                    bag = null; // carry the picture even if audio could not be handled
                 }
             }
 
-            // 2. Encoder + decoder over a shared surface.
+            // Phase 2 — encoder + decoder over a shared surface.
             MediaFormat ef = MediaFormat.createVideoFormat("video/avc", ow, oh);
             ef.setInteger(MediaFormat.KEY_COLOR_FORMAT,
                     MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
@@ -146,13 +216,11 @@ final class VideoCompressor {
             surface = enc.createInputSurface();
             enc.start();
 
-            String vmime = src.vf.getString(MediaFormat.KEY_MIME);
-            dec = MediaCodec.createDecoderByType(vmime);
+            dec = MediaCodec.createDecoderByType(src.vf.getString(MediaFormat.KEY_MIME));
             dec.configure(src.vf, surface, null, 0);
             dec.start();
 
-            mux = new MediaMuxer(sink.fd().getFileDescriptor(),
-                    MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            mux = new MediaMuxer(out.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
             if (rot != 0) mux.setOrientationHint(rot);
 
             int aTrack = -1;
@@ -165,8 +233,11 @@ final class VideoCompressor {
             boolean inputDone = false, decDone = false, encDone = false;
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
             ArrayList<Object[]> pending = new ArrayList<>();
+            int stall = 0;
 
             while (!encDone) {
+                boolean progressed = false;
+
                 if (!inputDone) {
                     int i = dec.dequeueInputBuffer(TIMEOUT);
                     if (i >= 0) {
@@ -179,6 +250,7 @@ final class VideoCompressor {
                             dec.queueInputBuffer(i, 0, sz, src.ex.getSampleTime(), 0);
                             src.ex.advance();
                         }
+                        progressed = true;
                     }
                 }
 
@@ -191,6 +263,7 @@ final class VideoCompressor {
                             decDone = true;
                             try { enc.signalEndOfInputStream(); } catch (Exception ignored) { }
                         }
+                        progressed = true;
                     }
                 }
 
@@ -204,6 +277,7 @@ final class VideoCompressor {
                         write(mux, vTrack, (byte[]) b[0], (Long) b[1], (Integer) b[2]);
                     }
                     pending.clear();
+                    progressed = true;
                 } else if (eo >= 0) {
                     ByteBuffer eb = enc.getOutputBuffer(eo);
                     if (info.size > 0 && eb != null
@@ -219,15 +293,22 @@ final class VideoCompressor {
                     enc.releaseOutputBuffer(eo, false);
                     if (eos) encDone = true;
                     if (p != null && durUs > 0) {
-                        p.on(0.15f + 0.8f * Math.min(1f, info.presentationTimeUs / (float) durUs), 0);
+                        float f = Math.min(1f, info.presentationTimeUs / (float) durUs);
+                        p.on(base + 0.08f + (0.82f - attempt * 0.03f) * f, 0);
                     }
+                    progressed = true;
                 }
+
+                // Guard against a codec that never returns anything.
+                if (progressed) stall = 0;
+                else if (++stall > 400) throw new IllegalStateException("Video codec stalled");
             }
 
             if (!started) throw new IllegalStateException("Encoder produced no output format");
             mux.stop();
             mux.release();
             mux = null;
+            return true;
         } finally {
             if (mux != null) {
                 try { mux.stop(); } catch (Exception ignored) { }
@@ -235,11 +316,11 @@ final class VideoCompressor {
             }
             if (dec != null) {
                 try { dec.stop(); } catch (Exception ignored) { }
-                dec.release();
+                try { dec.release(); } catch (Exception ignored) { }
             }
             if (enc != null) {
                 try { enc.stop(); } catch (Exception ignored) { }
-                enc.release();
+                try { enc.release(); } catch (Exception ignored) { }
             }
             if (surface != null) surface.release();
             if (bag != null) bag.close();
@@ -257,6 +338,15 @@ final class VideoCompressor {
     private static int even(long v) {
         int i = (int) Math.max(2, v);
         return i - (i % 2);
+    }
+
+    static long duration(MediaFormat vf, long fileSize, int srcRate) {
+        long d = longOr(vf, MediaFormat.KEY_DURATION, 0);
+        if (d <= 0 && fileSize > 0 && srcRate > 0) {
+            d = (long) (fileSize * 8.0 / srcRate * 1_000_000L);
+        }
+        if (d <= 0) d = 60_000_000L;
+        return d;
     }
 
     static int intOr(MediaFormat f, String key, int def) {
@@ -279,13 +369,25 @@ final class VideoCompressor {
 
     static final class Src {
         MediaExtractor ex;
+        ParcelFileDescriptor pfd;
         int vIdx = -1, aIdx = -1;
         MediaFormat vf, af;
 
         static Src open(Context ctx, Uri uri) throws Exception {
             Src s = new Src();
             s.ex = new MediaExtractor();
-            s.ex.setDataSource(ctx, uri, null);
+            // A file descriptor is far more reliable than a content URI on SAF
+            // providers (Downloads, Drive, SD cards) — this is what broke big files.
+            try {
+                s.pfd = ctx.getContentResolver().openFileDescriptor(uri, "r");
+            } catch (Exception e) {
+                s.pfd = null;
+            }
+            if (s.pfd != null) {
+                s.ex.setDataSource(s.pfd.getFileDescriptor());
+            } else {
+                s.ex.setDataSource(ctx, uri, null);
+            }
             for (int i = 0; i < s.ex.getTrackCount(); i++) {
                 MediaFormat f = s.ex.getTrackFormat(i);
                 String m = f.getString(MediaFormat.KEY_MIME);
@@ -303,6 +405,7 @@ final class VideoCompressor {
 
         void close() {
             try { ex.release(); } catch (Exception ignored) { }
+            try { if (pfd != null) pfd.close(); } catch (Exception ignored) { }
         }
     }
 }

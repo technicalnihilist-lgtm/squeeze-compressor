@@ -83,8 +83,8 @@ body{
 .target-val span{font-size:15px;font-weight:600;color:var(--dim)}
 .pill{font-size:11px;font-weight:600;color:#062e2a;padding:6px 10px;border-radius:999px;
   background:linear-gradient(120deg,var(--mint),var(--sky));box-shadow:0 6px 16px rgba(56,189,248,.28)}
-.chips{display:flex;gap:7px;margin-top:14px;flex-wrap:wrap}
-.chip{flex:1;min-width:0;padding:9px 0;text-align:center;border-radius:12px;font-size:12.5px;font-weight:600;
+.chips{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:14px}
+.chip{padding:9px 0;text-align:center;border-radius:12px;font-size:12.5px;font-weight:600;
   color:var(--dim);background:rgba(255,255,255,.05);border:1px solid var(--stroke);cursor:pointer;
   transition:all .18s ease}
 .chip:active{transform:scale(.95)}
@@ -142,6 +142,10 @@ body{
 .spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.2);
   border-top-color:var(--mint);animation:sp .8s linear infinite;flex:none}
 @keyframes sp{to{transform:rotate(360deg)}}
+.file.failed{border-color:rgba(248,113,113,.34);
+  background:linear-gradient(150deg,rgba(248,113,113,.11),rgba(255,255,255,.02))}
+.saved.bad{color:#fca5a5;background:rgba(248,113,113,.14);border-color:rgba(248,113,113,.3)}
+.ferr{margin-top:5px;font-size:11px;line-height:1.45;color:#fca5a5;padding-right:4px}
 .empty{padding:26px 12px;text-align:center;color:var(--dim);font-size:12.5px;line-height:1.6;
   border:1px dashed rgba(255,255,255,.14);border-radius:20px;background:rgba(255,255,255,.02)}
 
@@ -317,7 +321,7 @@ const S = {
   done: false
 };
 
-const TARGETS = [50, 100, 150, 250, 500];
+const TARGETS = [20, 50, 100, 150, 250, 500];
 const MODE_HINT = {
   lossless: 'Bit-for-bit where the format allows. Photos stay pixel-identical, archives are re-deflated, nothing is re-encoded lossily.',
   balanced: 'Visually lossless — video keeps full frame rate and audio is copied bit-for-bit.',
@@ -354,7 +358,11 @@ function renderChips(){
 function setTarget(t){
   S.targetMB = t;
   renderChips();
-  $('tpill').textContent = t >= 500 ? 'Room to spare' : 'Hard cap';
+  $('tpill').textContent = t <= 20 ? 'Extreme' : t >= 500 ? 'Room to spare' : 'Hard cap';
+  const ex = t <= 20;
+  $('modehint').textContent = ex
+    ? 'Extreme target. Long videos may not physically reach it — Squeeze will tell you the smallest size the footage allows.'
+    : MODE_HINT[S.mode];
   recalc();
 }
 
@@ -378,10 +386,13 @@ function renderQueue(){
     const [cls, tag] = kindOf(f.name);
     const pct = f.size && f.out ? Math.round((1 - f.out / f.size) * 100) : 0;
     const done = f.status === 'done';
+    const failed = f.status === 'failed';
     const meta = done
       ? `<div class="fmeta"><span>${fmt(f.size)}</span><span class="arrow">→</span><b>${fmt(f.out)}</b></div>`
+      : failed
+      ? `<div class="ferr">${f.error || 'Could not compress this file'}</div>`
       : `<div class="fmeta"><span>${fmt(f.size)}</span>${f.status === 'working' ? `<span class="arrow">·</span><span>${Math.round(f.progress || 0)}%</span>` : `<span class="arrow">·</span><span>waiting</span>`}</div>`;
-    return `<div class="file ${done ? 'done' : ''}" style="animation-delay:${i * 40}ms">
+    return `<div class="file ${done ? 'done' : ''} ${failed ? 'failed' : ''}" style="animation-delay:${i * 40}ms">
       <div class="badge b-${cls}"><span>${tag}</span></div>
       <div class="fmain">
         <div class="fname">${f.name}</div>
@@ -389,6 +400,7 @@ function renderQueue(){
         ${f.status === 'working' ? `<div class="bar"><i style="width:${f.progress || 0}%"></i></div>` : ''}
       </div>
       ${done ? `<div class="saved">−${pct}%</div>`
+             : failed ? `<div class="saved bad">failed</div>`
              : f.status === 'working' ? `<div class="spin"></div>` : ''}
     </div>`;
   }).join('');
@@ -444,7 +456,7 @@ function start(){
   if(S.running || !S.files.length) return;
   S.running = true;
   S.done = false;
-  S.files.forEach(f => { f.status = 'queued'; f.progress = 0; f.out = 0; });
+  S.files.forEach(f => { f.status = 'queued'; f.progress = 0; f.out = 0; f.error = null; });
   renderQueue(); recalc();
   pushSettings();
   if(window.Native) window.Native.start();
@@ -452,6 +464,7 @@ function start(){
 }
 function reset(){
   S.files = []; S.running = false; S.done = false;
+  if(window.Native && window.Native.clearQueue) window.Native.clearQueue();
   closeSheets(); renderQueue(); recalc();
 }
 
@@ -469,6 +482,8 @@ window.Sq = {
     if(!f) return;
     f.status = p.status || 'working';
     f.progress = p.progress || 0;
+    if(p.error) f.error = p.error;
+    if(p.status === 'failed'){ f.status = 'failed'; S.running = true; }
     if(p.out) f.out = p.out;
     renderQueue(); recalc();
   },
@@ -489,7 +504,10 @@ function showDone(d){
   $('dFiles').textContent = S.files.length;
   $('dSaved').textContent = fmt(Math.max(0, inB - outB));
   $('dPct').textContent = inB ? Math.round((1 - outB / inB) * 100) + '%' : '0%';
-  $('doneSub').textContent = S.files.length + ' files saved to Downloads / Squeeze';
+  const bad = S.files.filter(f => f.status === 'failed').length;
+  $('doneSub').textContent = bad
+    ? `${S.files.length - bad} saved to Downloads / Squeeze · ${bad} could not be compressed`
+    : S.files.length + ' files saved to Downloads / Squeeze';
   openSheet('done');
 }
 

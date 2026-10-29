@@ -9,6 +9,7 @@ import android.provider.MediaStore;
 
 import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -17,7 +18,11 @@ import java.io.OutputStream;
  * Core of Squeeze: job description, output plumbing and format dispatch.
  *
  * Everything streams. No file is ever loaded fully into memory, so multi-gigabyte
- * inputs are handled with the same code path as small ones.
+ * inputs take the same code path as small ones.
+ *
+ * Errors are never swallowed: if a format-specific compressor cannot do the job it
+ * returns a Result with ok=false and a readable reason, so the UI can say what went
+ * wrong instead of pretending the file was compressed.
  */
 final class Engine {
 
@@ -41,12 +46,20 @@ final class Engine {
         long out;
         String name;
         String note;
+        String error;
         Uri uri;
     }
 
     private static final String IMG = "jpg jpeg png webp heic heif bmp gif tiff avif";
     private static final String VID = "mp4 mkv mov webm avi 3gp m4v ts flv wmv";
     private static final String AUD = "mp3 m4a aac wav flac ogg opus amr";
+
+    static Result fail(String why) {
+        Result r = new Result();
+        r.ok = false;
+        r.error = why;
+        return r;
+    }
 
     static String ext(String n) {
         if (n == null) return "";
@@ -60,25 +73,41 @@ final class Engine {
     }
 
     static String mb(long bytes) {
-        long m = bytes / (1024L * 1024L);
+        if (bytes < 1024L * 1024L) return Math.max(1, bytes / 1024L) + " KB";
+        long m = Math.round(bytes / (1024.0 * 1024.0));
+        if (m >= 1024) return String.format(java.util.Locale.US, "%.1f GB", m / 1024.0);
         return m + " MB";
+    }
+
+    static boolean isMedia(String e) {
+        return has(IMG, e) || has(VID, e) || has(AUD, e);
     }
 
     static Result compress(Context ctx, Job job, Progress p) throws Exception {
         String e = ext(job.name);
-        Result r = null;
-        try {
-            if (has(IMG, e)) r = ImageCompressor.run(ctx, job, p);
-            else if (has(VID, e)) r = VideoCompressor.run(ctx, job, p);
-            else if (has(AUD, e)) r = AudioCompressor.run(ctx, job, p);
-            else r = Archiver.run(ctx, job, p);
-        } catch (OutOfMemoryError oom) {
-            r = null;
-        } catch (Exception ex) {
-            r = null;
+
+        // Refuse up front rather than half-way through a 3 GB transcode.
+        long need = Math.max(job.size, job.target);
+        long free = freeSpace(ctx);
+        if (free > 0 && need > free) {
+            return fail("Not enough space — needs about " + mb(need) + ", only " + mb(free) + " free");
         }
-        if (r == null || !r.ok) r = Archiver.zip(ctx, job, p);
-        if (r == null || !r.ok) r = copyRaw(ctx, job, p, "Stored unchanged");
+
+        Result r;
+        if (has(IMG, e)) {
+            r = ImageCompressor.run(ctx, job, p);
+            if (r == null) r = fail("This image could not be decoded (corrupt or unsupported)");
+        } else if (has(VID, e)) {
+            r = VideoCompressor.run(ctx, job, p);
+            if (r == null) r = fail("This video could not be re-encoded — no usable video track");
+        } else if (has(AUD, e)) {
+            r = AudioCompressor.run(ctx, job, p);
+            if (r == null) r = fail("This audio file could not be re-encoded");
+        } else {
+            // Archives, Office documents, PDFs and anything unknown: always lossless.
+            r = Archiver.run(ctx, job, p);
+            if (r == null) r = fail("Could not read this file");
+        }
         return r;
     }
 
@@ -154,6 +183,27 @@ final class Engine {
         }
     }
 
+    /** Scratch space for encoded output before it is published. */
+    static File workDir(Context ctx) {
+        File d = ctx.getExternalFilesDir(null);
+        if (d == null) d = ctx.getCacheDir();
+        File w = new File(d, "work");
+        if (!w.exists()) w.mkdirs();
+        return w;
+    }
+
+    static File tempFile(Context ctx, String suffix) throws Exception {
+        return File.createTempFile("sq", suffix, workDir(ctx));
+    }
+
+    static long freeSpace(Context ctx) {
+        try {
+            return workDir(ctx).getUsableSpace();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     /** Output destination in Downloads/Squeeze, created pending and published on success. */
     static final class Sink {
         final Uri uri;
@@ -175,7 +225,7 @@ final class Engine {
             cv.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Squeeze");
             cv.put(MediaStore.MediaColumns.IS_PENDING, 1);
             Uri u = ctx.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
-            if (u == null) throw new IllegalStateException("Could not create output file");
+            if (u == null) throw new IllegalStateException("Could not create the output file in Downloads/Squeeze");
             return new Sink(ctx, u, name);
         }
 
@@ -227,32 +277,23 @@ final class Engine {
         }
     }
 
-    static File tempFile(Context ctx, String suffix) throws Exception {
-        return File.createTempFile("sq", suffix, ctx.getCacheDir());
-    }
-
-    static void put(File from, OutputStream to, Progress p, float base) throws Exception {
-        InputStream in = new BufferedInputStream(new java.io.FileInputStream(from), 1 << 16);
-        byte[] buf = new byte[1 << 16];
-        long total = from.length(), done = 0;
-        int n;
-        while ((n = in.read(buf)) > 0) {
-            to.write(buf, 0, n);
-            done += n;
-            if (p != null && total > 0) p.on(base + (1 - base) * Math.min(1f, done / (float) total), done);
-        }
-        in.close();
-    }
-
-    static void closeQuietly(java.io.Closeable c) {
-        try { if (c != null) c.close(); } catch (Exception ignored) { }
-    }
-
-    static void writeTempToSink(Context ctx, Job job, File tmp, String outName, Progress p, Result r) throws Exception {
-        Sink sink = Sink.create(ctx, outName, mimeOf(outName));
+    /** Stream a finished temp file into Downloads/Squeeze. */
+    static void publishTemp(Context ctx, Job job, File tmp, String outName, String mime,
+                            Progress p, Result r) throws Exception {
+        Sink sink = Sink.create(ctx, outName, mime);
         try {
             OutputStream out = sink.stream();
-            put(tmp, out, p, 0.85f);
+            if (out == null) throw new IllegalStateException("Could not open the output file");
+            InputStream in = new BufferedInputStream(new FileInputStream(tmp), 1 << 16);
+            byte[] buf = new byte[1 << 16];
+            long total = tmp.length(), done = 0;
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                done += n;
+                if (p != null && total > 0) p.on(0.9f + 0.1f * Math.min(1f, done / (float) total), done);
+            }
+            in.close();
             out.flush();
             out.close();
         } catch (Exception e) {
@@ -261,12 +302,16 @@ final class Engine {
         }
         sink.publish();
         r.ok = true;
-        r.out = sink.size();
+        r.out = sink.size() > 0 ? sink.size() : tmp.length();
         r.name = outName;
         r.uri = sink.uri;
     }
 
     static FileOutputStream open(File f) throws Exception {
         return new FileOutputStream(f);
+    }
+
+    static void closeQuietly(java.io.Closeable c) {
+        try { if (c != null) c.close(); } catch (Exception ignored) { }
     }
 }

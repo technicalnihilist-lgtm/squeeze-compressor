@@ -13,10 +13,9 @@ import java.io.InputStream;
 /**
  * Photo / image compression.
  *
- * Strategy: decode with sub-sampling so memory stays bounded regardless of the
- * source resolution, optionally downscale to the resolution cap, then encode and
- * step quality down until the file fits the target. In lossless mode the pixels
- * are never touched — the image is re-encoded losslessly (WebP lossless / PNG).
+ * Decodes with sub-sampling so memory stays bounded no matter the source resolution,
+ * then steps quality and dimension down until the file fits the target. In lossless
+ * mode the pixels are never touched — the image is re-encoded losslessly.
  */
 final class ImageCompressor {
 
@@ -42,7 +41,6 @@ final class ImageCompressor {
         int dim = lossless ? longest : Math.min(cap, longest);
 
         int quality = lossless ? 100 : "smallest".equals(job.mode) ? 58 : 82;
-        int hasAlpha = probe.outMimeType != null && probe.outMimeType.contains("png") ? 1 : 0;
 
         File best = Engine.tempFile(ctx, ".img");
         File trial = Engine.tempFile(ctx, ".img");
@@ -52,8 +50,7 @@ final class ImageCompressor {
         for (int iter = 0; iter < 8; iter++) {
             Bitmap bmp = decode(ctx, job.uri, dim);
             if (bmp == null) break;
-            boolean alpha = bmp.hasAlpha() || hasAlpha == 1;
-            fmt = formatFor(lossless, alpha);
+            fmt = formatFor(lossless, bmp.hasAlpha());
 
             FileOutputStream fo = new FileOutputStream(trial);
             bmp.compress(fmt, quality, fo);
@@ -62,9 +59,9 @@ final class ImageCompressor {
             bmp.recycle();
 
             long sz = trial.length();
-            if (p != null) p.on(0.2f + 0.6f * (iter / 8f), sz);
+            if (p != null) p.on(0.2f + 0.65f * (iter / 8f), sz);
 
-            if (sz < bestSize) {
+            if (sz > 0 && sz < bestSize) {
                 bestSize = sz;
                 File swap = best;
                 best = trial;
@@ -73,8 +70,8 @@ final class ImageCompressor {
                 break;
             }
             if (sz <= job.target || lossless) break;
-            quality = Math.max(32, quality - 12);
-            dim = Math.max(240, (int) (dim * 0.88));
+            quality = Math.max(30, quality - 12);
+            dim = Math.max(240, (int) (dim * 0.85));
         }
 
         if (fmt == null || bestSize == Long.MAX_VALUE || bestSize <= 0) {
@@ -83,10 +80,6 @@ final class ImageCompressor {
             return null;
         }
 
-        String suffix = fmt == Bitmap.CompressFormat.PNG ? ".png"
-                : (fmt == Bitmap.CompressFormat.JPEG ? ".jpg" : ".webp");
-        String outName = Engine.base(job.name) + "_squeezed" + suffix;
-
         // Never hand back something bigger than what we started with.
         if (job.size > 0 && bestSize >= job.size) {
             best.delete();
@@ -94,9 +87,16 @@ final class ImageCompressor {
             return Engine.copyRaw(ctx, job, p, "Already optimal at this size");
         }
 
+        String suffix = fmt == Bitmap.CompressFormat.PNG ? ".png"
+                : (fmt == Bitmap.CompressFormat.JPEG ? ".jpg" : ".webp");
+        String outName = Engine.base(job.name) + "_squeezed" + suffix;
+
         Engine.Result r = new Engine.Result();
-        Engine.writeTempToSink(ctx, job, best, outName, p, r);
+        Engine.publishTemp(ctx, job, best, outName, Engine.mimeOf(outName), p, r);
         r.note = lossless ? "Lossless re-encode" : "Visually lossless";
+        if (bestSize > job.target) {
+            r.note = "Smallest reachable is " + Engine.mb(bestSize);
+        }
         best.delete();
         trial.delete();
         return r;
