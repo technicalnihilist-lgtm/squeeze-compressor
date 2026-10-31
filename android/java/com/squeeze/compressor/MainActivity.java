@@ -21,14 +21,31 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Thin native shell around the Squeeze UI. The HTML layer owns the look; this class
- * owns file access (SAF), the compression worker thread and the output folder.
+ * owns file access (SAF), the compression workers and the output folder.
+ *
+ * Two lanes, on purpose. Photos and archives run on a small pool so a batch of forty
+ * JPEGs does not queue up behind a two-minute video; video and audio stay on a single
+ * thread because MediaCodec instances are a device-wide resource and running two
+ * transcodes at once makes both of them slower and occasionally broken. The lanes run
+ * at the same time, which is the whole point: a video transcode plus a photo batch
+ * finishes in roughly the time of the slower one, not the sum.
+ *
+ * Progress carries a time remaining estimate (see {@link Speed}) so a long job says
+ * "about 40s left" instead of a bar that sits at 12% and looks stuck.
  */
 public class MainActivity extends Activity {
 
     private static final int PICK = 1001;
+
+    /** Progress events closer together than this are dropped; the bar does not need 200 fps. */
+    private static final long PROGRESS_MS = 160;
 
     private WebView web;
     private volatile String config = "{}";
@@ -155,7 +172,23 @@ public class MainActivity extends Activity {
         t.start();
     }
 
-    private void runJobs(List<Engine.Job> jobs) {
+    private static ThreadFactory named(final String prefix) {
+        return new ThreadFactory() {
+            private int n = 0;
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, prefix + "-" + (++n));
+                t.setPriority(Thread.NORM_PRIORITY - 1);
+                return t;
+            }
+        };
+    }
+
+    /**
+     * Runs the whole batch on two lanes: a small pool for photos and archives, one
+     * thread for everything that needs MediaCodec. Results are collected by queue
+     * index so the UI rows stay in the order the user added the files.
+     */
+    private void runJobs(final List<Engine.Job> jobs) {
         Engine.Job cfg = new Engine.Job();
         try {
             JSONObject o = new JSONObject(config);
@@ -166,11 +199,13 @@ public class MainActivity extends Activity {
             cfg.stripMeta = o.optBoolean("stripMeta", true);
         } catch (Exception ignored) { }
 
-        JSONArray results = new JSONArray();
-        long totalSaved = 0;
+        final JSONObject[] results = new JSONObject[jobs.size()];
+        final ExecutorService light = Executors.newFixedThreadPool(
+                Plan.LIGHT_WORKERS, named("squeeze-light"));
+        final ExecutorService codec = Executors.newSingleThreadExecutor(named("squeeze-codec"));
 
         for (int i = 0; i < jobs.size(); i++) {
-            if (cancelled) break;
+            final int index = i;
             final Engine.Job job = jobs.get(i);
             job.mode = cfg.mode;
             job.target = cfg.target;
@@ -178,59 +213,113 @@ public class MainActivity extends Activity {
             job.keepOriginal = cfg.keepOriginal;
             job.stripMeta = cfg.stripMeta;
 
-            final int index = i;
-            js(progressJson(index, "working", 0, 0, null));
-
-            Engine.Progress cb = new Engine.Progress() {
-                public void on(float f, long out) {
-                    js(progressJson(index, "working", Math.round(f * 100f), out, null));
+            Runnable task = new Runnable() {
+                public void run() {
+                    if (cancelled) return;
+                    results[index] = runOne(index, job);
                 }
             };
+            if (Plan.light(Engine.ext(job.name))) light.submit(task);
+            else codec.submit(task);
+        }
 
-            Engine.Result r = null;
-            String err = null;
-            try {
-                r = Engine.compress(MainActivity.this, job, cb);
-            } catch (Throwable t) {
-                String m = t.getMessage();
-                err = (m != null && m.length() > 0) ? m : t.getClass().getSimpleName();
-            }
-            if (r != null && !r.ok) err = r.error;
-            if (r == null && err == null) err = "Compression failed";
-
-            try {
-                if (err != null) {
-                    // Say what went wrong instead of pretending the file was compressed.
-                    js(progressJson(index, "failed", 100, 0, err));
-                    JSONObject o = new JSONObject();
-                    o.put("out", job.size);
-                    o.put("error", err);
-                    o.put("name", job.name);
-                    results.put(o);
-                    continue;
+        light.shutdown();
+        codec.shutdown();
+        try {
+            while (!light.isTerminated() || !codec.isTerminated()) {
+                light.awaitTermination(200, TimeUnit.MILLISECONDS);
+                codec.awaitTermination(200, TimeUnit.MILLISECONDS);
+                if (cancelled) {
+                    light.shutdownNow();
+                    codec.shutdownNow();
+                    break;
                 }
+            }
+        } catch (InterruptedException ignored) { }
 
-                long out = r.out;
-                if (job.size > out) totalSaved += (job.size - out);
-                js(progressJson(index, "done", 100, out, null));
-
-                JSONObject o = new JSONObject();
-                o.put("out", out);
-                o.put("name", r.name != null ? r.name : job.name);
-                if (r.note != null) o.put("note", r.note);
-                results.put(o);
-            } catch (Exception ignored) { }
+        JSONArray done = new JSONArray();
+        long totalSaved = 0;
+        for (JSONObject o : results) {
+            if (o == null) continue;
+            done.put(o);
+            long in = o.optLong("in", 0), out = o.optLong("out", 0);
+            if (in > out) totalSaved += (in - out);
         }
 
         try {
-            JSONObject done = new JSONObject();
-            done.put("files", results);
-            done.put("saved", totalSaved);
-            js("Sq.onDone(" + JSONObject.quote(done.toString()) + ")");
+            JSONObject summary = new JSONObject();
+            summary.put("files", done);
+            summary.put("saved", totalSaved);
+            js("Sq.onDone(" + JSONObject.quote(summary.toString()) + ")");
         } catch (Exception ignored) { }
 
         busy = false;
         keepAwake(false);
+    }
+
+    /** One job, on whichever lane it landed on. Returns its result row (or null). */
+    private JSONObject runOne(final int index, final Engine.Job job) {
+        final long t0 = System.currentTimeMillis();
+        final boolean byteMetered = Plan.byteMetered(Engine.ext(job.name));
+        final long[] sent = new long[]{0L, -2L};   // last send time, last eta
+        final int[] lastPct = new int[]{-1};
+
+        js(progressJson(index, "working", 0, 0, null, Speed.UNKNOWN));
+
+        Engine.Progress cb = new Engine.Progress() {
+            public void on(float f, long out) {
+                float frac = Math.min(1f, Math.max(0f, f));
+                int pct = Math.round(frac * 100f);
+                long elapsed = System.currentTimeMillis() - t0;
+                long eta = Speed.eta(byteMetered, out, job.size, frac, elapsed);
+                long now = System.currentTimeMillis();
+                boolean stale = now - sent[0] < PROGRESS_MS;
+                boolean etaMoved = Math.abs(eta - sent[1]) >= 2;
+                if (stale && pct == lastPct[0] && !etaMoved) return;
+                sent[0] = now;
+                sent[1] = eta;
+                lastPct[0] = pct;
+                js(progressJson(index, "working", pct, out, null, eta));
+            }
+        };
+
+        Engine.Result r = null;
+        String err = null;
+        try {
+            r = Engine.compress(MainActivity.this, job, cb);
+        } catch (Throwable t) {
+            String m = t.getMessage();
+            err = (m != null && m.length() > 0) ? m : t.getClass().getSimpleName();
+        }
+        if (r != null && !r.ok) err = r.error;
+        if (r == null && err == null) err = "Compression failed";
+
+        try {
+            if (err != null) {
+                // Say what went wrong instead of pretending the file was compressed.
+                js(progressJson(index, "failed", 100, 0, err, Speed.UNKNOWN));
+                JSONObject o = new JSONObject();
+                o.put("index", index);
+                o.put("in", job.size);
+                o.put("out", job.size);
+                o.put("error", err);
+                o.put("name", job.name);
+                return o;
+            }
+
+            long out = r.out;
+            js(progressJson(index, "done", 100, out, null, 0));
+
+            JSONObject o = new JSONObject();
+            o.put("index", index);
+            o.put("in", job.size);
+            o.put("out", out);
+            o.put("name", r.name != null ? r.name : job.name);
+            if (r.note != null) o.put("note", r.note);
+            return o;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     /**
@@ -287,13 +376,18 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String progressJson(int index, String status, int pct, long out, String error) {
+    /**
+     * @param eta seconds remaining, or {@link Speed#UNKNOWN} when it cannot be known.
+     *            The UI hides the field rather than printing a guess.
+     */
+    private String progressJson(int index, String status, int pct, long out, String error, long eta) {
         try {
             JSONObject o = new JSONObject();
             o.put("index", index);
             o.put("status", status);
             o.put("progress", pct);
             o.put("out", out);
+            if (eta != Speed.UNKNOWN) o.put("eta", eta);
             if (error != null) o.put("error", error);
             return "Sq.onProgress(" + JSONObject.quote(o.toString()) + ")";
         } catch (Exception e) {

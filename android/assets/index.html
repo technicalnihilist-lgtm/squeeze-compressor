@@ -178,6 +178,7 @@ body{
 @keyframes sp{to{transform:rotate(360deg)}}
 .file.failed{border-color:rgba(248,113,113,.34);
   background:linear-gradient(150deg,rgba(248,113,113,.11),rgba(255,255,255,.02))}
+.fmeta .eta{color:var(--sky);font-variant-numeric:tabular-nums}
 .saved.bad{color:#fca5a5;background:rgba(248,113,113,.14);border-color:rgba(248,113,113,.3)}
 .ferr{margin-top:5px;font-size:11px;line-height:1.45;color:#fca5a5;padding-right:4px}
 .empty{padding:26px 12px;text-align:center;color:var(--dim);font-size:12.5px;line-height:1.6;
@@ -399,6 +400,18 @@ function fmt(b){
   while(n >= 1024 && i < u.length - 1){ n /= 1024; i++; }
   return (n >= 100 || i === 0 ? Math.round(n) : n.toFixed(1)) + ' ' + u[i];
 }
+/* seconds remaining → "45s left" / "1m 30s left". Mirrors Speed.human() in Java. */
+function etaText(secs){
+  if(secs === undefined || secs === null || secs < 0) return '';
+  if(secs < 1) return 'almost done';
+  if(secs < 60) return secs + 's left';
+  if(secs < 3600){
+    const m = Math.floor(secs / 60), s = secs % 60;
+    return (s ? m + 'm ' + s + 's' : m + 'm') + ' left';
+  }
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  return (m ? h + 'h ' + m + 'm' : h + 'h') + ' left';
+}
 function kindOf(name){
   const e = (name.split('.').pop() || '').toLowerCase();
   if(['mp4','mkv','mov','webm','avi','3gp','m4v','ts','flv','wmv'].includes(e)) return ['vid', e.toUpperCase()];
@@ -451,7 +464,9 @@ function renderQueue(){
       ? `<div class="fmeta"><span>${fmt(f.size)}</span><span class="arrow">→</span><b>${fmt(f.out)}</b></div>`
       : failed
       ? `<div class="ferr">${f.error || 'Could not compress this file'}</div>`
-      : `<div class="fmeta"><span>${fmt(f.size)}</span>${f.status === 'working' ? `<span class="arrow">·</span><span>${Math.round(f.progress || 0)}%</span>` : `<span class="arrow">·</span><span>waiting</span>`}</div>`;
+      : `<div class="fmeta"><span>${fmt(f.size)}</span>${f.status === 'working'
+          ? `<span class="arrow">·</span><span>${Math.round(f.progress || 0)}%</span>${f.eta != null && f.eta >= 0 ? `<span class="arrow">·</span><span class="eta">${etaText(f.eta)}</span>` : ''}`
+          : `<span class="arrow">·</span><span>waiting</span>`}</div>`;
     return `<div class="file ${done ? 'done' : ''} ${failed ? 'failed' : ''}" style="animation-delay:${i * 40}ms">
       <div class="badge b-${cls}"><span>${tag}</span></div>
       <div class="fmain">
@@ -542,6 +557,8 @@ window.Sq = {
     if(!f) return;
     f.status = p.status || 'working';
     f.progress = p.progress || 0;
+    if(typeof p.eta === 'number') f.eta = p.eta;
+    if(p.status === 'done' || p.status === 'failed') f.eta = null;
     if(p.error) f.error = p.error;
     if(p.status === 'failed'){ f.status = 'failed'; S.running = true; }
     if(p.out) f.out = p.out;
@@ -550,7 +567,17 @@ window.Sq = {
   onDone(json){
     const d = JSON.parse(json);
     S.running = false; S.done = true;
-    if(d.files) d.files.forEach((x, i) => { if(S.files[i]) { S.files[i].status = 'done'; S.files[i].out = x.out || S.files[i].out; } });
+    if(d.files) d.files.forEach(x => {
+      const i = typeof x.index === 'number' ? x.index : -1;
+      const f = i >= 0 ? S.files[i] : null;
+      if(!f) return;
+      f.eta = null;
+      if(x.error){ f.status = 'failed'; f.error = x.error; }
+      else { f.status = 'done'; f.out = x.out || f.out; }
+    });
+    // Anything the engine never reported (cancelled mid-batch) goes back to waiting
+    // instead of being dressed up as a finished file.
+    S.files.forEach(f => { if(f.status === 'working'){ f.status = 'queued'; f.progress = 0; f.eta = null; } });
     renderQueue(); recalc();
     showDone(d);
   },
@@ -729,6 +756,7 @@ function demoRun(){
     const step = setInterval(() => {
       p += 18 + Math.random() * 22;
       f.progress = Math.min(100, p);
+      f.eta = Math.max(1, Math.round((100 - f.progress) / 22));
       if(f.progress >= 100){
         clearInterval(step);
         f.status = 'done';
@@ -755,7 +783,7 @@ function demoRun(){
     }
     else if(stage === 'run'){
       DEMO.forEach((d, i) => S.files.push({ ...d, status: i < 2 ? 'done' : i === 2 ? 'working' : 'queued',
-        progress: i === 2 ? 64 : i < 2 ? 100 : 0, out: i < 2 ? d.out : 0 }));
+        progress: i === 2 ? 64 : i < 2 ? 100 : 0, eta: i === 2 ? 42 : null, out: i < 2 ? d.out : 0 }));
       S.running = true;
       renderQueue(); recalc();
     } else { addDemo(); }

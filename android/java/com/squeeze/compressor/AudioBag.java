@@ -28,6 +28,7 @@ final class AudioBag implements AutoCloseable {
     private final File file;
     private final RandomAccessFile raf;
     private final List<long[]> index = new ArrayList<>(); // {ptsUs, flags, size}
+    private byte[] scratch = new byte[0];
     MediaFormat fmt;
     int count;
 
@@ -43,19 +44,26 @@ final class AudioBag implements AutoCloseable {
         if (offset > dup.limit()) dup.position(dup.limit());
         else dup.position(offset);
         dup.limit(Math.max(dup.position(), Math.min(end, dup.limit())));
-        byte[] b = new byte[dup.remaining()];
-        dup.get(b);
-        raf.write(b);
-        index.add(new long[]{pts, flags, b.length});
+        int n = dup.remaining();
+        // One scratch array for every sample in the track, grown when needed — a
+        // long clip used to allocate a byte[] per AAC frame just to write it out.
+        if (n > scratch.length) scratch = new byte[Math.max(n, Math.max(1 << 12, scratch.length * 2))];
+        dup.get(scratch, 0, n);
+        raf.write(scratch, 0, n);
+        index.add(new long[]{pts, flags, n});
         count++;
     }
 
     void play(MediaMuxer mux, int track) throws Exception {
         raf.seek(0);
         byte[] chunk = new byte[1 << 16];
+        // One buffer and one BufferInfo for the whole track, not one per sample.
+        ByteBuffer bb = null;
+        MediaCodec.BufferInfo bi = new MediaCodec.BufferInfo();
         for (long[] e : index) {
             int size = (int) e[2];
-            ByteBuffer bb = ByteBuffer.allocate(size);
+            if (bb == null || bb.capacity() < size) bb = ByteBuffer.allocateDirect(size);
+            bb.clear();
             int read = 0;
             while (read < size) {
                 int n = raf.read(chunk, 0, Math.min(chunk.length, size - read));
@@ -64,9 +72,8 @@ final class AudioBag implements AutoCloseable {
                 read += n;
             }
             bb.position(0);
-            bb.limit(size);
-            MediaCodec.BufferInfo bi = new MediaCodec.BufferInfo();
-            bi.set(0, size, e[0], (int) e[1]);
+            bb.limit(read);
+            bi.set(0, read, e[0], (int) e[1]);
             mux.writeSampleData(track, bb, bi);
         }
     }

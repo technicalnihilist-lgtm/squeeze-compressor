@@ -81,7 +81,17 @@ Files are read through a file descriptor rather than a content URI, which is wha
 
 If something genuinely cannot be compressed, the queue row turns red and says why — "not enough space", "no video track", "smallest reachable is X". Nothing is ever reported as done when no file was produced.
 
-The queue is unlimited; add a hundred files and they run one after another. The screen is kept awake and a wake lock is held while a job runs, so a long transcode does not get killed when the display sleeps.
+The queue is unlimited, and it runs on two lanes: photos and archives go through a small pool of workers while one video or audio job takes the codec lane on its own thread. A batch of forty photos therefore does not sit idle behind a ten-minute transcode — the two finish in roughly the time of the slower one, not the sum. MediaCodec work stays strictly single-threaded on purpose: two simultaneous transcodes fight over the same hardware encoder and make both of them worse. The screen is kept awake and a wake lock is held while a job runs, so a long transcode does not get killed when the display sleeps.
+
+## Speed
+
+Three things decide whether a queue feels fast, and all three are deliberate:
+
+- **A photo is decoded once.** The source is decoded a single time at the largest size the ladder needs; every later attempt is an encode of those same pixels, at a lower quality or after one in-place downscale of a reused bitmap. The old path re-opened and re-decoded the file for each quality step — on a 12 MP JPEG a decode costs about five encodes, and it was doing eight of them.
+- **Work that cannot help is skipped.** A file that already fits the target and is already inside the resolution cap is copied untouched without a single pixel being decoded.
+- **Progress knows how long it has left.** Every progress event carries a time-remaining estimate, measured from bytes processed per second where the byte count is real and from the job's own progress rate where it is not. The queue row shows `64% · 42s left` instead of a bar that sits still and looks stuck. When no honest estimate exists yet, no number is shown.
+
+Memory is bounded rather than merely large: one decode plus one working bitmap per photo, one reusable sample buffer for a whole video encode, and one scratch array for a whole audio track — no per-frame allocations in any hot loop.
 
 ## Where files go
 
@@ -93,7 +103,7 @@ No `INTERNET` permission at all. The app physically cannot upload your files. No
 
 ## Build it yourself
 
-No Gradle, no AndroidX, no dependencies — `aapt2`, `javac`, `d8` and `apksigner` directly. The whole app is about 2,000 lines, Java plus one HTML file.
+No Gradle, no AndroidX, no dependencies — `aapt2`, `javac`, `d8` and `apksigner` directly. The whole app is about 2,300 lines, Java plus one HTML file.
 
 ```bash
 export ANDROID_SDK_ROOT=/path/to/android-sdk    # needs platforms;android-34, build-tools;34.0.0
@@ -110,9 +120,11 @@ android/
 ├── release.keystore            # demo signing key (password: squeeze123)
 ├── assets/index.html           # the entire UI — one file
 └── java/com/squeeze/compressor/
-    ├── MainActivity.java       # WebView shell, SAF picker, worker thread
+    ├── MainActivity.java       # WebView shell, SAF picker, two worker lanes
     ├── Engine.java             # job model, MediaStore output, dispatch
-    ├── ImageCompressor.java    # decode → scale → encode → step quality
+    ├── Plan.java               # which jobs run in parallel, image ladder rules
+    ├── Speed.java              # bytes/sec and time-remaining math
+    ├── ImageCompressor.java    # one decode → reused bitmap → step quality
     ├── VideoCompressor.java    # MediaCodec surface transcode + target fitting
     ├── AudioCompressor.java    # AAC re-encode
     ├── AudioBag.java           # encoded-audio spool + AAC passthrough

@@ -403,6 +403,7 @@ final class VideoCompressor {
 
             boolean inputDone = false, decDone = false, encDone = false;
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+            SampleBuf sbuf = new SampleBuf();
             ArrayList<Object[]> pending = new ArrayList<>();
             int stall = 0;
 
@@ -459,12 +460,16 @@ final class VideoCompressor {
                     ByteBuffer eb = enc.getOutputBuffer(eo);
                     if (info.size > 0 && eb != null
                             && (info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
-                        byte[] data = new byte[info.size];
-                        eb.position(info.offset);
-                        eb.limit(info.offset + info.size);
-                        eb.get(data);
-                        if (started) write(mux, vTrack, data, info.presentationTimeUs, info.flags);
-                        else pending.add(new Object[]{data, info.presentationTimeUs, info.flags});
+                        // One sample buffer per encode, grown as needed and reused for
+                        // every frame. Allocating a fresh byte[] per frame was pure
+                        // garbage: a 10-minute clip meant ~15 000 throwaway arrays.
+                        sbuf.read(eb, info.offset, info.size);
+                        if (started) {
+                            sbuf.write(mux, vTrack, info.size, info.presentationTimeUs, info.flags);
+                        } else {
+                            pending.add(new Object[]{sbuf.copy(info.size),
+                                    info.presentationTimeUs, info.flags});
+                        }
                     }
                     boolean eos = (info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
                     enc.releaseOutputBuffer(eo, false);
@@ -502,6 +507,41 @@ final class VideoCompressor {
             if (surface != null) surface.release();
             if (bag != null) bag.close();
             src.close();
+        }
+    }
+
+    /**
+     * A single reusable sample buffer for the encode loop.
+     *
+     * The muxer copies what it is handed, so one array can carry every frame: it is
+     * grown only when a frame is bigger than anything seen so far, and the ByteBuffer
+     * wrapper is rebuilt only when the array itself is replaced.
+     */
+    private static final class SampleBuf {
+        private byte[] data = new byte[0];
+        private ByteBuffer bb;
+        private final MediaCodec.BufferInfo bi = new MediaCodec.BufferInfo();
+
+        void read(ByteBuffer src, int offset, int size) {
+            if (size > data.length) {
+                int cap = Math.max(size, Math.max(1 << 16, data.length * 2));
+                data = new byte[cap];
+                bb = ByteBuffer.wrap(data);
+            }
+            src.position(offset);
+            src.limit(offset + size);
+            src.get(data, 0, size);
+        }
+
+        void write(MediaMuxer mux, int track, int size, long pts, int flags) {
+            bb.position(0);
+            bb.limit(size);
+            bi.set(0, size, pts, flags & ~MediaCodec.BUFFER_FLAG_CODEC_CONFIG);
+            mux.writeSampleData(track, bb, bi);
+        }
+
+        byte[] copy(int size) {
+            return java.util.Arrays.copyOf(data, size);
         }
     }
 
