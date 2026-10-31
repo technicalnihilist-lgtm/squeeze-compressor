@@ -89,6 +89,7 @@ final class Archiver {
             String outName = Engine.ext(job.name).equals("zip") ? job.name
                     : Engine.base(job.name) + "_squeezed." + Engine.ext(job.name);
             Engine.publishTemp(ctx, job, tmp, outName, Engine.mimeOf(outName), p, r);
+            r.codec = "DEFLATE";
             r.note = "Lossless re-compression of " + entries + " entries";
             tmp.delete();
             return r;
@@ -102,7 +103,7 @@ final class Archiver {
     /** Wrap the file in a maximally deflated ZIP stream, written straight to the output. */
     static Engine.Result zip(Context ctx, Engine.Job job, Engine.Progress p) {
         String outName = Engine.base(job.name) + ".zip";
-        Engine.Sink sink = Engine.Sink.create(ctx, outName, "application/zip");
+        Engine.Sink sink = Engine.Sink.create(ctx, outName, "application/zip", job.selfTest);
         try {
             InputStream in = new BufferedInputStream(ctx.getContentResolver().openInputStream(job.uri), 1 << 16);
             OutputStream out = sink.stream();
@@ -137,6 +138,8 @@ final class Archiver {
             r.out = outSize;
             r.name = outName;
             r.uri = sink.uri;
+            r.file = sink.file;
+            r.codec = "DEFLATE";
             r.note = "Lossless ZIP (deflate level 9)";
             return r;
         } catch (Exception e) {

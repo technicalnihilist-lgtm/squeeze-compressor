@@ -93,6 +93,7 @@ final class ImageCompressor {
 
         Engine.Result r = new Engine.Result();
         Engine.publishTemp(ctx, job, best, outName, Engine.mimeOf(outName), p, r);
+        r.codec = suffix.equals(".png") ? "PNG" : suffix.equals(".webp") ? "WebP" : "JPEG";
         r.note = lossless ? "Lossless re-encode" : "Visually lossless";
         if (bestSize > job.target) {
             r.note = "Smallest reachable is " + Engine.mb(bestSize);

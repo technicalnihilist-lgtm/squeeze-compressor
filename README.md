@@ -4,6 +4,8 @@
 
 Photos, 4K video, audio, PDFs, Office documents and archives all go through one queue. Pick a target, hit compress, and everything lands in `Downloads/Squeeze`. Everything runs on the phone: no uploads, no account, no ads, no file-size limits.
 
+And you do not have to take any of that on trust: there is a **built-in self-test** that encodes a real H.264 + AAC clip on your own phone, pushes it through the same engine your files go through, and shows you the input bytes, output bytes, codec and time taken. No file picking required.
+
 <p align="center">
   <img src="screenshots/icon.png" width="96" alt="Squeeze icon">
 </p>
@@ -14,7 +16,9 @@ Photos, 4K video, audio, PDFs, Office documents and archives all go through one 
 |---|---|---|
 | <img src="screenshots/home.png" width="240"> | <img src="screenshots/compressing.png" width="240"> | <img src="screenshots/done.png" width="240"> |
 
-<img src="screenshots/settings.png" width="240" alt="Settings">
+| Self-test | Settings |
+|---|---|
+| <img src="screenshots/selftest.png" width="240" alt="Self-test result"> | <img src="screenshots/settings.png" width="240" alt="Settings"> |
 
 ## Install
 
@@ -37,6 +41,22 @@ The honest version, format by format. There is no single "compress without losin
 Two rules it never breaks: it will not hand you a file bigger than the one you gave it, and it will not re-encode something that already fits your target — those come back copied untouched.
 
 **On PDFs:** embedded images inside a PDF are not recompressed, because doing that properly needs a full PDF library and would change the document's rendering. Squeeze re-deflates the container. A PDF that is mostly scanned images will barely shrink; one with uncompressed content streams can drop a lot.
+
+## Prove it works — the self-test
+
+Every compressor claims a lot. Squeeze ships with a button that checks it, on your hardware, in about fifteen seconds.
+
+Tap **Run** under the add button (or *Run the self-test* in Settings). The app then:
+
+1. Lists the encoders this device actually reports — H.264, HEVC and AAC, with the codec name and whether it is hardware or software.
+2. Encodes a real H.264 + AAC clip with `MediaCodec` — 640 × 360, CBR, about 24 MB — so the input is genuinely larger than the target.
+3. Compresses a synthetic 2400 × 1600 PNG the same way.
+4. Pushes both through `Engine.compress` at a **20 MB target**, exactly as it would a file you picked.
+5. Re-opens the result with `MediaExtractor` to prove it is a playable MP4, not just bytes on disk.
+
+You get a pass/fail card with the measured numbers: bytes in, bytes out, the codec that did the work, the encode time and the total time. If any step fails, the card fails and names the step — the self-test never reports a pass for work that did not happen.
+
+The test's own input and output are written to scratch space and deleted afterwards, so running it does not clutter `Downloads/Squeeze`.
 
 ## Hitting the target
 
@@ -96,10 +116,11 @@ android/
     ├── VideoCompressor.java    # MediaCodec surface transcode + target fitting
     ├── AudioCompressor.java    # AAC re-encode
     ├── AudioBag.java           # encoded-audio spool + AAC passthrough
-    └── Archiver.java           # ZIP / Office re-deflate, generic fallback
+    ├── Archiver.java           # ZIP / Office re-deflate, generic fallback
+    └── SelfTest.java           # on-device H.264+AAC clip, test image, encoder list
 ```
 
-The UI is a single HTML file talking to the engine over a small JS bridge (`Native.pickFiles`, `Native.start`, `Sq.onProgress`, `Sq.onDone`), which is also why the screenshots above are the real interface rendered at phone size rather than mockups.
+The UI is a single HTML file talking to the engine over a small JS bridge (`Native.pickFiles`, `Native.start`, `Native.selfTest`, `Native.encoders`, `Sq.onProgress`, `Sq.onDone`, `Sq.onSelfTest`), which is also why the screenshots above are the real interface rendered at phone size rather than mockups.
 
 ## Licence
 

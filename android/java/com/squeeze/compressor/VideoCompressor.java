@@ -137,6 +137,7 @@ final class VideoCompressor {
         String outName = Engine.base(job.name) + "_squeezed.mp4";
         Engine.Result r = new Engine.Result();
         Engine.publishTemp(ctx, job, best, outName, "video/mp4", p, r);
+        r.codec = "H.264";
         r.note = "H.264 " + bestW + "×" + bestH + " · " + (bestRate / 1000) + " kbps";
         if (bestSize > job.target) {
             r.note = "Smallest reachable is " + Engine.mb(bestSize)

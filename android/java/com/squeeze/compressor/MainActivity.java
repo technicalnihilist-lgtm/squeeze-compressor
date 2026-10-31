@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     private volatile String config = "{}";
     private volatile boolean cancelled;
     private volatile boolean busy;
+    private volatile boolean testing;
     private PowerManager.WakeLock wake;
 
     private final List<Engine.Job> queue = new ArrayList<>();
@@ -232,6 +233,60 @@ public class MainActivity extends Activity {
         keepAwake(false);
     }
 
+    /**
+     * Run the built-in proof: build a synthetic clip on this device and push it through
+     * the real engine. Runs on its own thread so the UI keeps its progress bar.
+     */
+    private void runSelfTest() {
+        if (testing) return;
+        testing = true;
+        keepAwake(true);
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                String json;
+                try {
+                    JSONObject o = SelfTest.run(MainActivity.this, new SelfTest.Step() {
+                        public void on(String label, int pct) {
+                            js(stepJson(label, pct));
+                        }
+                    });
+                    json = o.toString();
+                } catch (Throwable t2) {
+                    json = errorJson(t2);
+                }
+                js("Sq.onSelfTest(" + JSONObject.quote(json) + ")");
+                testing = false;
+                keepAwake(false);
+            }
+        }, "squeeze-selftest");
+        t.start();
+    }
+
+    private String errorJson(Throwable t) {
+        try {
+            JSONObject o = new JSONObject();
+            o.put("ok", false);
+            o.put("fails", 1);
+            o.put("rows", new JSONArray());
+            String m = t.getMessage();
+            o.put("error", (m != null && m.length() > 0) ? m : t.getClass().getSimpleName());
+            return o.toString();
+        } catch (Exception e) {
+            return "{\"ok\":false,\"fails\":1}";
+        }
+    }
+
+    private String stepJson(String label, int pct) {
+        try {
+            JSONObject o = new JSONObject();
+            o.put("label", label);
+            o.put("pct", Math.max(0, Math.min(100, pct)));
+            return "Sq.onSelfTestStep(" + JSONObject.quote(o.toString()) + ")";
+        } catch (Exception e) {
+            return "0";
+        }
+    }
+
     private String progressJson(int index, String status, int pct, long out, String error) {
         try {
             JSONObject o = new JSONObject();
@@ -307,6 +362,21 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void clearQueue() {
             queue.clear();
+        }
+
+        @JavascriptInterface
+        public void selfTest() {
+            runSelfTest();
+        }
+
+        @JavascriptInterface
+        public void encoders() {
+            Thread t = new Thread(new Runnable() {
+                public void run() {
+                    js("Sq.onCodecs(" + JSONObject.quote(SelfTest.inventory().toString()) + ")");
+                }
+            }, "squeeze-codecs");
+            t.start();
         }
 
         @JavascriptInterface

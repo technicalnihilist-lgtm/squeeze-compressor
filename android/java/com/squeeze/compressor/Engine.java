@@ -39,6 +39,11 @@ final class Engine {
         int maxDim = 1920;
         boolean keepOriginal = true;
         boolean stripMeta = true;
+        /**
+         * Self-test runs write their output to scratch space instead of
+         * Downloads/Squeeze, so proving the engine works never litters the phone.
+         */
+        boolean selfTest = false;
     }
 
     static final class Result {
@@ -47,7 +52,9 @@ final class Engine {
         String name;
         String note;
         String error;
+        String codec;   // what actually did the work: "H.264", "JPEG", "AAC", "DEFLATE", "copy"
         Uri uri;
+        File file;      // non-null only for self-test runs (scratch output)
     }
 
     private static final String IMG = "jpg jpeg png webp heic heif bmp gif tiff avif";
@@ -117,7 +124,7 @@ final class Engine {
 
     /** Byte-for-byte copy of the original into the output folder. */
     static Result copyRaw(Context ctx, Job job, Progress p, String note) throws Exception {
-        Sink sink = Sink.create(ctx, job.name, mimeOf(job.name));
+        Sink sink = Sink.create(ctx, job.name, mimeOf(job.name), job.selfTest);
         try {
             InputStream in = new BufferedInputStream(ctx.getContentResolver().openInputStream(job.uri), 1 << 16);
             OutputStream out = sink.stream();
@@ -135,6 +142,8 @@ final class Engine {
         r.out = sink.size();
         r.name = job.name;
         r.uri = sink.uri;
+        r.file = sink.file;
+        r.codec = "copy";
         r.note = note;
         return r;
     }
@@ -208,17 +217,36 @@ final class Engine {
     static final class Sink {
         final Uri uri;
         final String name;
+        /** Non-null when this sink writes to scratch space (self-test) instead of MediaStore. */
+        final File file;
         private final Context ctx;
         private OutputStream os;
         private ParcelFileDescriptor pfd;
 
-        private Sink(Context ctx, Uri uri, String name) {
+        private Sink(Context ctx, Uri uri, String name, File file) {
             this.ctx = ctx;
             this.uri = uri;
             this.name = name;
+            this.file = file;
         }
 
         static Sink create(Context ctx, String name, String mime) {
+            return create(ctx, name, mime, false);
+        }
+
+        /**
+         * @param scratch write to a temp file in the work dir instead of Downloads/Squeeze.
+         *                Used by the self-test, which must not leave files behind.
+         */
+        static Sink create(Context ctx, String name, String mime, boolean scratch) {
+            if (scratch) {
+                try {
+                    File f = File.createTempFile("sqout", suffixFor(name), workDir(ctx));
+                    return new Sink(ctx, null, name, f);
+                } catch (Exception e) {
+                    throw new IllegalStateException("Could not create scratch output: " + e.getMessage());
+                }
+            }
             ContentValues cv = new ContentValues();
             cv.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
             cv.put(MediaStore.MediaColumns.MIME_TYPE, mime);
@@ -226,11 +254,20 @@ final class Engine {
             cv.put(MediaStore.MediaColumns.IS_PENDING, 1);
             Uri u = ctx.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
             if (u == null) throw new IllegalStateException("Could not create the output file in Downloads/Squeeze");
-            return new Sink(ctx, u, name);
+            return new Sink(ctx, u, name, null);
+        }
+
+        private static String suffixFor(String name) {
+            int i = name == null ? -1 : name.lastIndexOf('.');
+            return i < 0 ? ".tmp" : name.substring(i);
         }
 
         OutputStream stream() throws Exception {
-            if (os == null) os = ctx.getContentResolver().openOutputStream(uri, "w");
+            if (os == null) {
+                os = file != null
+                        ? new java.io.BufferedOutputStream(new FileOutputStream(file), 1 << 16)
+                        : ctx.getContentResolver().openOutputStream(uri, "w");
+            }
             return os;
         }
 
@@ -240,6 +277,7 @@ final class Engine {
         }
 
         long size() {
+            if (file != null) return file.length();
             try {
                 if (pfd != null) return pfd.getStatSize();
                 ParcelFileDescriptor p = ctx.getContentResolver().openFileDescriptor(uri, "r");
@@ -259,6 +297,7 @@ final class Engine {
             try {
                 if (pfd != null) { pfd.close(); pfd = null; }
             } catch (Exception ignored) { }
+            if (file != null) return;   // scratch output needs no MediaStore handshake
             ContentValues cv = new ContentValues();
             cv.put(MediaStore.MediaColumns.IS_PENDING, 0);
             try { ctx.getContentResolver().update(uri, cv, null, null); } catch (Exception ignored) { }
@@ -273,6 +312,10 @@ final class Engine {
                 if (pfd != null) pfd.close();
             } catch (Exception ignored) { }
             pfd = null;
+            if (file != null) {
+                try { file.delete(); } catch (Exception ignored) { }
+                return;
+            }
             try { ctx.getContentResolver().delete(uri, null, null); } catch (Exception ignored) { }
         }
     }
@@ -280,7 +323,7 @@ final class Engine {
     /** Stream a finished temp file into Downloads/Squeeze. */
     static void publishTemp(Context ctx, Job job, File tmp, String outName, String mime,
                             Progress p, Result r) throws Exception {
-        Sink sink = Sink.create(ctx, outName, mime);
+        Sink sink = Sink.create(ctx, outName, mime, job.selfTest);
         try {
             OutputStream out = sink.stream();
             if (out == null) throw new IllegalStateException("Could not open the output file");
@@ -305,6 +348,7 @@ final class Engine {
         r.out = sink.size() > 0 ? sink.size() : tmp.length();
         r.name = outName;
         r.uri = sink.uri;
+        r.file = sink.file;
     }
 
     static FileOutputStream open(File f) throws Exception {

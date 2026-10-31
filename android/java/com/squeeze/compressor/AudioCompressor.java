@@ -68,6 +68,7 @@ final class AudioCompressor {
             String outName = Engine.base(job.name) + "_squeezed.m4a";
             Engine.Result r = new Engine.Result();
             Engine.publishTemp(ctx, job, tmp, outName, "audio/mp4", p, r);
+            r.codec = passthrough ? "AAC (copied)" : "AAC";
             r.note = passthrough ? "Audio copied bit-for-bit"
                     : "AAC " + (rate / 1000) + " kbps";
             if (tmp.length() > job.target) {
