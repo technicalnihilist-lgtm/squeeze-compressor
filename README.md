@@ -30,6 +30,14 @@ Squeeze registers itself as a share target and an "open with" handler, so **Shar
 
 While a job is running a small pill in the footer says the screen stays awake, which reflects the actual wake lock: the display is held on and a partial wake lock keeps the CPU going, so a locked phone does not quietly stall the encoder.
 
+## Motion you can dial down
+
+The UI has two motion effects, and both are adjustable in **Settings → Motion & depth** rather than baked in.
+
+The **4D depth effect** tilts the glass cards towards your finger (up to 6° at full strength) and slides a soft light across them, so the surface reads as layered instead of flat. **Parallax** moves the four backdrop blobs at their own rates — the nearest one travels furthest — both with your finger and as the queue scrolls, which is what gives the screen depth when the list is long.
+
+Each has its own switch and its own strength slider (0–100%), saved on the device and restored on the next launch. Both are one `transform` per frame written into CSS custom properties, so nothing reflows and there is no measurable battery cost; if the system's "reduce motion" setting is on, both start switched off instead of overriding it.
+
 ## Install
 
 Download **[Squeeze.apk](Squeeze.apk)** and open it on your phone. Android 10 or newer. You may need to allow "install unknown apps" for your browser or file manager the first time.

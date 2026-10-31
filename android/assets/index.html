@@ -19,6 +19,8 @@
   --stroke:rgba(255,255,255,.11);
   --stroke2:rgba(255,255,255,.18);
   --shadow:0 18px 40px rgba(0,0,0,.45);
+  /* driven by the motion engine in JS */
+  --mx:0;--my:0;--tilt:0;--lit:0;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%}
@@ -215,6 +217,7 @@ body{
   -webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .28s}
 .scrim.on{opacity:1;pointer-events:auto}
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;border-radius:26px 26px 0 0;padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 20px);
+  max-height:88vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch;
   background:linear-gradient(180deg,rgba(26,32,52,.96),rgba(12,16,28,.99));
   border-top:1px solid var(--stroke2);box-shadow:0 -20px 60px rgba(0,0,0,.6);
   transform:translateY(102%);transition:transform .34s cubic-bezier(.22,.9,.28,1)}
@@ -243,6 +246,38 @@ body{
 .stat{flex:1;padding:12px 8px;border-radius:15px;background:rgba(255,255,255,.05);border:1px solid var(--stroke)}
 .stat b{display:block;font-size:16px;font-weight:700;letter-spacing:-.03em}
 .stat span{display:block;margin-top:3px;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+
+/* ---------- motion: 4D depth + parallax ---------- */
+/* One wrapper per blob, so parallax can translate it without fighting the
+   float keyframes (which own transform on .blob itself). */
+.plx{position:absolute;inset:0;pointer-events:none;will-change:transform}
+.card,.test-card,.add{transform-style:preserve-3d;
+  transform:perspective(1100px)
+            rotateX(calc(var(--my) * var(--tilt) * -1deg))
+            rotateY(calc(var(--mx) * var(--tilt) * 1deg));
+  transition:transform .22s cubic-bezier(.2,.8,.3,1)}
+/* The light that follows your finger: the depth effect's second half. */
+.card:after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
+  opacity:var(--lit);transition:opacity .3s ease;
+  background:radial-gradient(340px circle at calc(50% + var(--mx) * 46%) calc(50% + var(--my) * 46%),
+    rgba(255,255,255,.15),rgba(255,255,255,.05) 44%,transparent 70%)}
+.card>*{position:relative;z-index:1}
+
+/* ---------- settings: sliders ---------- */
+.sec-label{margin:20px 0 2px;font-size:10.5px;font-weight:700;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--dim)}
+.row.slider{display:block;padding:13px 0;transition:opacity .2s}
+.row.slider.dim{opacity:.45}
+.sl-top{display:flex;align-items:center;justify-content:space-between;font-size:13.5px}
+.sl-top .k{font-weight:550;color:var(--txt)}
+.sl-top .v{font-size:12px;font-weight:650;color:var(--mint);font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;margin:12px 0 2px;
+  border-radius:99px;outline:none;background-color:rgba(255,255,255,.14);
+  background-image:linear-gradient(90deg,var(--mint),var(--sky));
+  background-repeat:no-repeat;background-size:var(--fill,55%) 100%}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+  background:#fff;border:0;box-shadow:0 2px 10px rgba(0,0,0,.45);cursor:pointer}
+input[type=range]:disabled::-webkit-slider-thumb{background:rgba(255,255,255,.55)}
 
 /* toast */
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 96px);transform:translate(-50%,14px);
@@ -340,6 +375,19 @@ body{
   <div class="row"><span class="k">Keep original files</span><span class="sw on" id="sw-keep" onclick="toggle('keep')"></span></div>
   <div class="row"><span class="k">Max video resolution</span><span class="v" id="v-res">1920 × 1080</span></div>
   <div class="row"><span class="k">Strip metadata</span><span class="sw on" id="sw-strip" onclick="toggle('strip')"></span></div>
+
+  <div class="sec-label">Motion &amp; depth</div>
+  <div class="row"><span class="k">4D depth effect</span><span class="sw on" id="sw-depth" onclick="toggleMotion('depth')"></span></div>
+  <div class="row slider" id="row-depth">
+    <div class="sl-top"><span class="k">Depth strength</span><span class="v" id="v-depth">60%</span></div>
+    <input type="range" id="r-depth" min="0" max="100" value="60" oninput="setMotion('depthAmt', this.value)">
+  </div>
+  <div class="row"><span class="k">Parallax</span><span class="sw on" id="sw-par" onclick="toggleMotion('par')"></span></div>
+  <div class="row slider" id="row-par">
+    <div class="sl-top"><span class="k">Parallax strength</span><span class="v" id="v-par">55%</span></div>
+    <input type="range" id="r-par" min="0" max="100" value="55" oninput="setMotion('parAmt', this.value)">
+  </div>
+  <div class="hint" style="margin:9px 2px 4px">Depth tilts the cards towards your finger and slides the light across them; parallax moves the backdrop at its own pace as you scroll. Both are a single transform per frame — no extra battery, and both stay off if you switch them off.</div>
   <div class="row"><span class="k">Output folder</span><span class="v">Downloads / Squeeze</span></div>
   <div class="row"><span class="k">Free space</span><span class="v" id="v-free">—</span></div>
   <div class="row"><span class="k">Encoders on this device</span><span class="v" id="v-codecs">checking…</span></div>
@@ -850,9 +898,132 @@ function demoRun(){
   tick();
 }
 
+/* ---------- motion: 4D depth + parallax ---------- */
+/* Two cheap effects, both driven from one pointer position and one scroll offset:
+   depth tilts the glass cards towards the finger and slides a light across them,
+   parallax moves the backdrop blobs at their own rates. Everything is a single
+   transform per frame, written into CSS custom properties, so the layout never
+   reflows. */
+const MK = 'squeeze.motion';
+const M = { depth: true, par: true, depthAmt: 60, parAmt: 55, mx: 0, my: 0, sy: 0 };
+const PLX = [];
+
+function loadMotion(){
+  try{
+    const o = JSON.parse(localStorage.getItem(MK) || '{}');
+    if(typeof o.depth === 'boolean') M.depth = o.depth;
+    if(typeof o.par === 'boolean') M.par = o.par;
+    if(typeof o.depthAmt === 'number') M.depthAmt = Math.max(0, Math.min(100, o.depthAmt));
+    if(typeof o.parAmt === 'number') M.parAmt = Math.max(0, Math.min(100, o.parAmt));
+  }catch(e){}
+  // If the OS says "reduce motion", start with both off rather than overriding it.
+  try{
+    if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){
+      M.depth = false; M.par = false;
+    }
+  }catch(e){}
+}
+function saveMotion(){
+  try{
+    localStorage.setItem(MK, JSON.stringify({
+      depth: M.depth, par: M.par, depthAmt: M.depthAmt, parAmt: M.parAmt
+    }));
+  }catch(e){}
+}
+
+function initMotion(){
+  // Wrap each blob: the float keyframes own transform on .blob itself, so the
+  // parallax translate goes on a wrapper instead of fighting the animation.
+  document.querySelectorAll('.bg .blob').forEach((b, i) => {
+    const w = document.createElement('div');
+    w.className = 'plx';
+    w.dataset.k = [1, -0.78, 0.62, -0.45][i % 4];
+    b.parentNode.insertBefore(w, b);
+    w.appendChild(b);
+    PLX.push(w);
+  });
+
+  const onMove = e => {
+    const t = e.touches && e.touches.length ? e.touches[0] : e;
+    if(t == null || t.clientX == null) return;
+    M.mx = Math.max(-1, Math.min(1, (t.clientX / window.innerWidth) * 2 - 1));
+    M.my = Math.max(-1, Math.min(1, (t.clientY / window.innerHeight) * 2 - 1));
+    paint();
+  };
+  addEventListener('pointermove', onMove, { passive: true });
+  addEventListener('pointerdown', onMove, { passive: true });
+  addEventListener('touchmove', onMove, { passive: true });
+  addEventListener('touchend', easeBack, { passive: true });
+  addEventListener('pointerup', easeBack);
+
+  const sc = $('scroll');
+  if(sc) sc.addEventListener('scroll', () => { M.sy = sc.scrollTop; paint(); }, { passive: true });
+
+  paint();
+  syncMotionUi();
+}
+
+/* Finger lifted: drift back to centre instead of snapping. */
+function easeBack(){
+  M.mx *= 0.3; M.my *= 0.3;
+  paint();
+  if(Math.abs(M.mx) > 0.008 || Math.abs(M.my) > 0.008) requestAnimationFrame(easeBack);
+  else { M.mx = 0; M.my = 0; paint(); }
+}
+
+let paintQueued = false;
+function paint(){
+  if(paintQueued) return;
+  paintQueued = true;
+  requestAnimationFrame(() => {
+    paintQueued = false;
+    const root = document.documentElement;
+    const dAmt = M.depth ? M.depthAmt / 100 : 0;
+    const pAmt = M.par ? M.parAmt / 100 : 0;
+    root.style.setProperty('--mx', M.mx.toFixed(3));
+    root.style.setProperty('--my', M.my.toFixed(3));
+    root.style.setProperty('--tilt', (dAmt * 6).toFixed(2));   // max 6° at 100%
+    root.style.setProperty('--lit', dAmt.toFixed(3));
+    for(const w of PLX){
+      const k = parseFloat(w.dataset.k) * pAmt;
+      const x = M.mx * 26 * k;
+      const y = M.my * 26 * k - M.sy * 0.08 * k;
+      w.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)';
+    }
+  });
+}
+
+function toggleMotion(what){
+  if(what === 'depth') M.depth = !M.depth;
+  if(what === 'par') M.par = !M.par;
+  saveMotion(); syncMotionUi(); paint();
+}
+function setMotion(key, val){
+  const n = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
+  if(key === 'depthAmt') M.depthAmt = n;
+  if(key === 'parAmt') M.parAmt = n;
+  saveMotion(); syncMotionUi(); paint();
+}
+function syncMotionUi(){
+  const swD = $('sw-depth'), swP = $('sw-par'), rD = $('r-depth'), rP = $('r-par');
+  if(!swD || !rD) return;
+  swD.classList.toggle('on', M.depth);
+  swP.classList.toggle('on', M.par);
+  rD.value = M.depthAmt; rP.value = M.parAmt;
+  rD.disabled = !M.depth; rP.disabled = !M.par;
+  rD.style.setProperty('--fill', M.depthAmt + '%');
+  rP.style.setProperty('--fill', M.parAmt + '%');
+  $('v-depth').textContent = M.depth ? M.depthAmt + '%' : 'off';
+  $('v-par').textContent = M.par ? M.parAmt + '%' : 'off';
+  $('row-depth').classList.toggle('dim', !M.depth);
+  $('row-par').classList.toggle('dim', !M.par);
+}
+
 /* ---------- boot ---------- */
 (function boot(){
   const demo = /[?&]demo/.test(location.search) || !window.Native;
+  loadMotion();
+  initMotion();
   renderChips(); renderQueue(); recalc();
   $('modehint').textContent = MODE_HINT[S.mode];
   if(demo){
