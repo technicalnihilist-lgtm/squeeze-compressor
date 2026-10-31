@@ -63,6 +63,7 @@ final class Archiver {
                 zout.putNextEntry(out);
                 int n;
                 while ((n = zin.read(buf)) > 0) {
+                    Engine.checkCancel();
                     zout.write(buf, 0, n);
                     read += n;
                     if (p != null) p.on(Math.min(0.85f, read / (float) total), 0);
@@ -96,6 +97,7 @@ final class Archiver {
         } catch (Exception ex) {
             if (sink != null) sink.delete();
             if (tmp != null) tmp.delete();
+            if (ex instanceof Engine.Cancelled) return null;   // Engine.compress re-throws
             return null;
         }
     }
@@ -115,6 +117,7 @@ final class Archiver {
             long done = 0;
             int n;
             while ((n = in.read(buf)) > 0) {
+                Engine.checkCancel();
                 zout.write(buf, 0, n);
                 done += n;
                 if (p != null && job.size > 0) {

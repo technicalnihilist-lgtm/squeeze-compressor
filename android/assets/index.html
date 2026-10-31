@@ -198,6 +198,17 @@ body{
   transition:transform .18s ease,opacity .2s}
 .go:active{transform:scale(.98)}
 .go[disabled]{opacity:.4;box-shadow:none}
+.go.cancel{color:#2b0a10;background:linear-gradient(120deg,#fb7185,#f87171 60%,#f472b6);
+  box-shadow:0 14px 34px rgba(248,113,113,.26),inset 0 1px 0 rgba(255,255,255,.45)}
+.awake{display:none;align-items:center;gap:7px;width:fit-content;margin:0 0 9px;
+  padding:5px 10px;border-radius:99px;font-size:10.5px;font-weight:600;color:#fcd34d;
+  background:rgba(251,191,36,.11);border:1px solid rgba(251,191,36,.26)}
+.awake.on{display:flex}
+.awake i{width:6px;height:6px;border-radius:50%;background:#fbbf24;
+  box-shadow:0 0 8px rgba(251,191,36,.9);animation:keepawake 1.7s ease-in-out infinite}
+@keyframes keepawake{0%,100%{opacity:.4;transform:scale(.8)}50%{opacity:1;transform:scale(1.2)}}
+.fnote{margin-top:5px;font-size:10.5px;line-height:1.45;color:var(--dim);display:flex;gap:5px}
+.fnote b{color:rgba(94,234,212,.85);font-weight:700;flex:none}
 
 /* ---------- sheets ---------- */
 .scrim{position:fixed;inset:0;z-index:20;background:rgba(2,5,12,.6);backdrop-filter:blur(6px);
@@ -310,11 +321,12 @@ body{
   </div>
 
   <div class="foot">
+    <div class="awake" id="awake"><i></i>Screen stays awake during the job</div>
     <div class="totals">
       <div><b id="sumIn">0 MB</b> <span style="opacity:.5">→</span> <b id="sumOut">0 MB</b></div>
       <div class="sav" id="sumSav">fits any size</div>
     </div>
-    <button class="go" id="go" disabled onclick="start()">Add files to begin</button>
+    <button class="go" id="go" disabled onclick="goTap()">Add files to begin</button>
   </div>
 </div>
 
@@ -351,7 +363,7 @@ body{
       <div class="stat"><b id="dPct">85%</b><span>Smaller</span></div>
     </div>
   </div>
-  <button class="sheet-btn" style="background:linear-gradient(120deg,var(--mint),var(--sky));color:#04121a;border:0;font-weight:700" onclick="closeSheets()">Open output folder</button>
+  <button class="sheet-btn" style="background:linear-gradient(120deg,var(--mint),var(--sky));color:#04121a;border:0;font-weight:700" onclick="openFolder()">Open output folder</button>
   <button class="sheet-btn" onclick="reset()">Compress more</button>
 </div>
 
@@ -379,7 +391,9 @@ const S = {
   stripMeta: true,
   files: [],
   running: false,
-  done: false
+  cancelling: false,
+  done: false,
+  awake: false
 };
 
 const TARGETS = [20, 50, 100, 150, 250, 500];
@@ -462,6 +476,7 @@ function renderQueue(){
     const failed = f.status === 'failed';
     const meta = done
       ? `<div class="fmeta"><span>${fmt(f.size)}</span><span class="arrow">→</span><b>${fmt(f.out)}</b></div>`
+        + (f.note ? `<div class="fnote"><b>·</b><span>${f.note}</span></div>` : '')
       : failed
       ? `<div class="ferr">${f.error || 'Could not compress this file'}</div>`
       : `<div class="fmeta"><span>${fmt(f.size)}</span>${f.status === 'working'
@@ -491,9 +506,24 @@ function recalc(){
   const pct = inB ? Math.round((1 - outB / inB) * 100) : 0;
   $('sumSav').textContent = total && pct > 0 ? `saving ${pct}%` : 'fits any size';
   const go = $('go');
-  go.disabled = !total || S.running;
-  go.textContent = S.running ? `Compressing… ${S.files.filter(f => f.status === 'done').length}/${total}`
-                             : total ? `Compress ${total} ${total === 1 ? 'file' : 'files'}` : 'Add files to begin';
+  go.classList.toggle('cancel', S.running);
+  go.disabled = S.running ? !!S.cancelling : !total;
+  go.textContent = S.running
+    ? (S.cancelling ? 'Cancelling…' : `Cancel · ${S.files.filter(f => f.status === 'done').length}/${total} done`)
+    : total ? `Compress ${total} ${total === 1 ? 'file' : 'files'}` : 'Add files to begin';
+}
+
+/* ---------- screen-awake indicator ---------- */
+function setAwake(on){
+  S.awake = !!on;
+  $('awake').classList.toggle('on', S.awake);
+}
+
+/* ---------- open Downloads / Squeeze ---------- */
+function openFolder(){
+  closeSheets();
+  if(window.Native && window.Native.openOutputFolder) window.Native.openOutputFolder();
+  else toast('Output goes to Downloads / Squeeze');
 }
 
 /* ---------- sheets ---------- */
@@ -527,18 +557,41 @@ function pick(){
   if(window.Native) window.Native.pickFiles();
   else { addDemo(); toast('Demo mode — add files from the app'); }
 }
+function goTap(){
+  if(S.running) cancelRun();
+  else start();
+}
 function start(){
   if(S.running || !S.files.length) return;
   S.running = true;
+  S.cancelling = false;
   S.done = false;
-  S.files.forEach(f => { f.status = 'queued'; f.progress = 0; f.out = 0; f.error = null; });
+  setAwake(true);
+  S.files.forEach(f => { f.status = 'queued'; f.progress = 0; f.out = 0; f.error = null; f.note = null; f.eta = null; });
   renderQueue(); recalc();
   pushSettings();
   if(window.Native) window.Native.start();
   else demoRun();
 }
+function cancelRun(){
+  if(!S.running || S.cancelling) return;
+  S.cancelling = true;
+  recalc();
+  if(window.Native && window.Native.cancel) window.Native.cancel();
+  else demoCancel();
+}
+/* Preview mode only — the real cancel is native and cooperative. */
+function demoCancel(){
+  setTimeout(() => {
+    S.running = false; S.cancelling = false; S.done = false;
+    S.files.forEach(f => { if(f.status !== 'done'){ f.status = 'queued'; f.progress = 0; f.eta = null; } });
+    setAwake(false); renderQueue(); recalc();
+    toast('Cancelled — queue restored');
+  }, 600);
+}
 function reset(){
-  S.files = []; S.running = false; S.done = false;
+  S.files = []; S.running = false; S.cancelling = false; S.done = false;
+  setAwake(false);
   if(window.Native && window.Native.clearQueue) window.Native.clearQueue();
   closeSheets(); renderQueue(); recalc();
 }
@@ -550,6 +603,23 @@ window.Sq = {
     list.forEach(f => S.files.push({ name: f.name, size: f.size, out: 0, progress: 0, status: 'queued', uri: f.uri }));
     renderQueue(); recalc();
     toast(list.length + (list.length === 1 ? ' file added' : ' files added'));
+  },
+  onRestore(json){
+    let list = [];
+    try{ list = JSON.parse(json); }catch(e){ return; }
+    list.forEach(f => S.files.push({ name: f.name, size: f.size, out: 0, progress: 0,
+      status: 'queued', uri: f.uri, note: null }));
+    renderQueue(); recalc();
+    if(list.length) toast(`Queue restored — ${list.length} ${list.length === 1 ? 'file' : 'files'}`);
+  },
+  onNote(index, note){
+    const f = S.files[index];
+    if(!f || !note) return;
+    f.note = note;
+    renderQueue();
+  },
+  onAwake(on){
+    setAwake(!!on);
   },
   onProgress(json){
     const p = JSON.parse(json);
@@ -566,19 +636,27 @@ window.Sq = {
   },
   onDone(json){
     const d = JSON.parse(json);
-    S.running = false; S.done = true;
+    S.running = false; S.cancelling = false;
     if(d.files) d.files.forEach(x => {
       const i = typeof x.index === 'number' ? x.index : -1;
       const f = i >= 0 ? S.files[i] : null;
       if(!f) return;
       f.eta = null;
       if(x.error){ f.status = 'failed'; f.error = x.error; }
-      else { f.status = 'done'; f.out = x.out || f.out; }
+      else { f.status = 'done'; f.out = x.out || f.out; if(x.note) f.note = x.note; }
     });
     // Anything the engine never reported (cancelled mid-batch) goes back to waiting
     // instead of being dressed up as a finished file.
     S.files.forEach(f => { if(f.status === 'working'){ f.status = 'queued'; f.progress = 0; f.eta = null; } });
     renderQueue(); recalc();
+    if(d.cancelled){
+      // No "Squeezed." card for work that did not happen — the queue is back instead.
+      S.done = false;
+      const left = S.files.filter(f => f.status === 'queued').length;
+      toast(left ? `Cancelled — ${left} ${left === 1 ? 'file' : 'files'} back in the queue` : 'Cancelled');
+      return;
+    }
+    S.done = true;
     showDone(d);
   },
   onError(msg){ S.running = false; recalc(); toast(msg); },
@@ -734,10 +812,14 @@ const DEMO_TEST = {
 };
 
 const DEMO = [
-  { name: 'Vacation_4K_Maldives.mp4', size: 1.94e9, out: 148e6, status: 'done', progress: 100 },
-  { name: 'Wedding_Highlights.mov', size: 2.61e9, out: 149e6, status: 'done', progress: 100 },
-  { name: 'IMG_2048.HEIC', size: 12.4e6, out: 1.9e6, status: 'done', progress: 100 },
-  { name: 'Q3_Board_Deck.pdf', size: 38.2e6, out: 11.1e6, status: 'done', progress: 100 }
+  { name: 'Vacation_4K_Maldives.mp4', size: 1.94e9, out: 148e6, status: 'done', progress: 100,
+    note: 'H.264 1280×720 · 30 fps · 812 kbps' },
+  { name: 'Wedding_Highlights.mov', size: 2.61e9, out: 149e6, status: 'done', progress: 100,
+    note: 'H.264 854×480 · 25 fps · 690 kbps' },
+  { name: 'IMG_2048.HEIC', size: 12.4e6, out: 1.9e6, status: 'done', progress: 100,
+    note: 'Visually lossless · 1920px · q82' },
+  { name: 'Q3_Board_Deck.pdf', size: 38.2e6, out: 11.1e6, status: 'done', progress: 100,
+    note: 'Lossless re-compression of 61 entries' }
 ];
 function addDemo(){
   DEMO.forEach(d => S.files.push({ ...d }));
@@ -781,10 +863,13 @@ function demoRun(){
     else if(stage === 'selftest'){
       T.data = DEMO_TEST; renderTest(); openSheet('test');
     }
-    else if(stage === 'run'){
+    else if(stage === 'run' || stage === 'cancel'){
       DEMO.forEach((d, i) => S.files.push({ ...d, status: i < 2 ? 'done' : i === 2 ? 'working' : 'queued',
-        progress: i === 2 ? 64 : i < 2 ? 100 : 0, eta: i === 2 ? 42 : null, out: i < 2 ? d.out : 0 }));
+        progress: i === 2 ? 64 : i < 2 ? 100 : 0, eta: i === 2 ? 42 : null,
+        out: i < 2 ? d.out : 0, note: i < 2 ? d.note : null }));
       S.running = true;
+      if(stage === 'cancel') S.cancelling = true;
+      setAwake(true);
       renderQueue(); recalc();
     } else { addDemo(); }
   }

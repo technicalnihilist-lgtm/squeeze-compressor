@@ -61,6 +61,7 @@ final class AudioBag implements AutoCloseable {
         ByteBuffer bb = null;
         MediaCodec.BufferInfo bi = new MediaCodec.BufferInfo();
         for (long[] e : index) {
+            Engine.checkCancel();
             int size = (int) e[2];
             if (bb == null || bb.capacity() < size) bb = ByteBuffer.allocateDirect(size);
             bb.clear();
@@ -100,6 +101,7 @@ final class AudioBag implements AutoCloseable {
 
         ex.selectTrack(aIdx);
         while (true) {
+            Engine.checkCancel();
             buf.clear();
             int sz = ex.readSampleData(buf, 0);
             if (sz < 0) break;
@@ -145,6 +147,7 @@ final class AudioBag implements AutoCloseable {
         long lastPts = 0;
 
         while (!encDone) {
+            Engine.checkCancel();
             if (!inputDone) {
                 int i = dec.dequeueInputBuffer(TIMEOUT);
                 if (i >= 0) {

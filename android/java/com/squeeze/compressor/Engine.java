@@ -30,6 +30,39 @@ final class Engine {
         void on(float fraction, long outBytes);
     }
 
+    /**
+     * Thrown when the user taps cancel. It is not a failure: every loop unwinds,
+     * half-written scratch files are deleted and the file goes back in the queue.
+     */
+    static final class Cancelled extends Exception {
+        Cancelled() { super("Cancelled"); }
+    }
+
+    /** One flag for the whole run: the worker and the codec loops all watch it. */
+    private static volatile boolean ABORT;
+
+    static void resetCancel() { ABORT = false; }
+
+    static void requestCancel() { ABORT = true; }
+
+    static boolean cancelled() { return ABORT; }
+
+    static void checkCancel() throws Cancelled { if (ABORT) throw new Cancelled(); }
+
+    static boolean isCancel(Throwable t) { return t instanceof Cancelled; }
+
+    /** After a cancel, drop half-written scratch files so a retry starts clean. */
+    static void sweepPartials(Context ctx) {
+        try {
+            File[] fs = workDir(ctx).listFiles();
+            if (fs == null) return;
+            for (File f : fs) {
+                String n = f.getName();
+                if (n.startsWith("sq") || n.endsWith(".tmp")) f.delete();
+            }
+        } catch (Exception ignored) { }
+    }
+
     static final class Job {
         Uri uri;
         String name = "file";
@@ -115,6 +148,8 @@ final class Engine {
             r = Archiver.run(ctx, job, p);
             if (r == null) r = fail("Could not read this file");
         }
+        // A compressor that swallows exceptions must not turn a cancel into a result.
+        checkCancel();
         return r;
     }
 
@@ -153,6 +188,7 @@ final class Engine {
         long done = 0;
         int n;
         while ((n = in.read(buf)) > 0) {
+            checkCancel();
             out.write(buf, 0, n);
             done += n;
             if (p != null && total > 0) p.on(Math.min(1f, done / (float) total), done);
@@ -332,6 +368,7 @@ final class Engine {
             long total = tmp.length(), done = 0;
             int n;
             while ((n = in.read(buf)) > 0) {
+                checkCancel();
                 out.write(buf, 0, n);
                 done += n;
                 if (p != null && total > 0) p.on(0.9f + 0.1f * Math.min(1f, done / (float) total), done);

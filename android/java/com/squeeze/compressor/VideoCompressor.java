@@ -111,6 +111,7 @@ final class VideoCompressor {
         String lastProblem = null;
 
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            Engine.checkCancel();   // between rungs, not just between frames
             int dim = rungs[Math.min(startIdx + attempt, rungs.length - 1)];
             double k = dim / (double) longest;
             int ow = even(Math.round(dw * (float) k));
@@ -408,6 +409,8 @@ final class VideoCompressor {
             int stall = 0;
 
             while (!encDone) {
+                // Cooperative abort: the user's cancel lands here, between two frames.
+                Engine.checkCancel();
                 boolean progressed = false;
 
                 if (!inputDone) {

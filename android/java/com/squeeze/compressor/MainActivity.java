@@ -1,24 +1,29 @@
 package com.squeeze.compressor;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.PowerManager;
+import android.provider.DocumentsContract;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
-import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -37,8 +42,13 @@ import java.util.concurrent.TimeUnit;
  * at the same time, which is the whole point: a video transcode plus a photo batch
  * finishes in roughly the time of the slower one, not the sum.
  *
- * Progress carries a time remaining estimate (see {@link Speed}) so a long job says
- * "about 40s left" instead of a bar that sits at 12% and looks stuck.
+ * Cancel is cooperative all the way down: the worker stops between files, the codec
+ * loops call {@link Engine#checkCancel()} between frames, half-written scratch files
+ * are deleted and every unfinished file goes back into the queue for a retry.
+ *
+ * Files can arrive three ways: the in-app picker, a share sheet (ACTION_SEND) or a
+ * "open with" tap from another app (ACTION_VIEW). The queue is kept in preferences so
+ * reopening the app does not lose it.
  */
 public class MainActivity extends Activity {
 
@@ -47,12 +57,20 @@ public class MainActivity extends Activity {
     /** Progress events closer together than this are dropped; the bar does not need 200 fps. */
     private static final long PROGRESS_MS = 160;
 
+    private static final String PREFS = "squeeze";
+    private static final String KEY_QUEUE = "queue";
+
     private WebView web;
     private volatile String config = "{}";
     private volatile boolean cancelled;
     private volatile boolean busy;
     private volatile boolean testing;
+    private volatile boolean pageReady;
+    private volatile Uri lastOutput;
     private PowerManager.WakeLock wake;
+
+    /** JS queued before the WebView has finished loading, replayed in order afterwards. */
+    private final List<String> pendingJs = new ArrayList<>();
 
     private final List<Engine.Job> queue = new ArrayList<>();
 
@@ -62,6 +80,8 @@ public class MainActivity extends Activity {
 
         getWindow().setStatusBarColor(Color.parseColor("#060A14"));
         getWindow().setNavigationBarColor(Color.parseColor("#060A14"));
+
+        restoreQueue();
 
         web = new WebView(this);
         web.setBackgroundColor(Color.parseColor("#060A14"));
@@ -77,19 +97,161 @@ public class MainActivity extends Activity {
         s.setTextZoom(100);
 
         web.setWebChromeClient(new WebChromeClient());
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView v, String url) {
+                pageReady = true;
+                pushRestored();
+                flushJs();
+                pushAwake();
+            }
+        });
         web.addJavascriptInterface(new Bridge(), "Native");
         web.loadUrl("file:///android_asset/index.html");
         setContentView(web);
+
+        handleIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntent(intent);
     }
 
     /* ------------------------------------------------------------------ */
 
     private void js(final String script) {
+        if (!pageReady) {
+            synchronized (pendingJs) { pendingJs.add(script); }
+            return;
+        }
+        jsNow(script);
+    }
+
+    private void jsNow(final String script) {
         runOnUiThread(new Runnable() {
             public void run() {
                 if (web != null) web.evaluateJavascript(script, null);
             }
         });
+    }
+
+    private void flushJs() {
+        List<String> copy;
+        synchronized (pendingJs) {
+            copy = new ArrayList<>(pendingJs);
+            pendingJs.clear();
+        }
+        for (String s : copy) jsNow(s);
+    }
+
+    /** The queue survives a restart: same files, same order, ready to retry. */
+    private void pushRestored() {
+        JSONArray arr = new JSONArray();
+        for (Engine.Job j : queue) {
+            try {
+                JSONObject o = new JSONObject();
+                o.put("name", j.name);
+                o.put("size", j.size);
+                o.put("uri", j.uri.toString());
+                arr.put(o);
+            } catch (Exception ignored) { }
+        }
+        if (arr.length() > 0) jsNow("Sq.onRestore(" + JSONObject.quote(arr.toString()) + ")");
+    }
+
+    private void pushAwake() {
+        jsNow("Sq.onAwake(" + (wake != null && wake.isHeld() ? "true" : "false") + ")");
+    }
+
+    private SharedPreferences prefs() {
+        return getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    private void persistQueue() {
+        JSONArray arr = new JSONArray();
+        for (Engine.Job j : queue) {
+            try {
+                JSONObject o = new JSONObject();
+                o.put("uri", j.uri.toString());
+                o.put("name", j.name);
+                o.put("size", j.size);
+                arr.put(o);
+            } catch (Exception ignored) { }
+        }
+        prefs().edit().putString(KEY_QUEUE, arr.toString()).apply();
+    }
+
+    private void restoreQueue() {
+        String raw = prefs().getString(KEY_QUEUE, null);
+        if (raw == null || raw.length() == 0) return;
+        int dropped = 0;
+        try {
+            JSONArray arr = new JSONArray(raw);
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                Uri u;
+                try {
+                    u = Uri.parse(o.getString("uri"));
+                } catch (Exception e) {
+                    dropped++;
+                    continue;
+                }
+                // A temporary grant from a share sheet may be gone by the next launch;
+                // restoring an unreadable row would only fail later, so drop it here.
+                if (!readable(u)) { dropped++; continue; }
+                Engine.Job j = new Engine.Job();
+                j.uri = u;
+                j.name = o.optString("name", "file");
+                j.size = o.optLong("size", 0);
+                queue.add(j);
+            }
+        } catch (Exception ignored) { }
+        if (dropped > 0) persistQueue();
+    }
+
+    private boolean readable(Uri u) {
+        if (u == null) return false;
+        try {
+            InputStream in = getContentResolver().openInputStream(u);
+            if (in == null) return false;
+            in.close();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Share-to-Squeeze and open-with land here. */
+    private void handleIntent(Intent intent) {
+        if (intent == null) return;
+        String a = intent.getAction();
+        if (a == null) return;
+
+        List<Uri> uris = new ArrayList<>();
+        if (Intent.ACTION_SEND.equals(a)) {
+            Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (u == null) u = intent.getData();
+            if (u != null) uris.add(u);
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(a)) {
+            ArrayList<Uri> many = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (many != null) uris.addAll(many);
+        } else if (Intent.ACTION_VIEW.equals(a)) {
+            if (intent.getData() != null) uris.add(intent.getData());
+        } else {
+            return;
+        }
+        if (uris.isEmpty()) return;
+        addUris(uris);
+        // Make the shared file survive a restart when the sender allowed it.
+        for (Uri u : uris) {
+            try {
+                getContentResolver().takePersistableUriPermission(
+                        u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception ignored) { }
+        }
     }
 
     private void launchPicker() {
@@ -116,9 +278,14 @@ public class MainActivity extends Activity {
         } else if (data.getData() != null) {
             uris.add(data.getData());
         }
+        addUris(uris);
+    }
 
+    /** Queue a list of URIs and tell the UI about them. */
+    private void addUris(List<Uri> uris) {
         JSONArray arr = new JSONArray();
         for (Uri u : uris) {
+            if (u == null) continue;
             String name = null;
             long size = 0;
             try {
@@ -133,7 +300,10 @@ public class MainActivity extends Activity {
                     c.close();
                 }
             } catch (Exception ignored) { }
+            if (name == null) name = u.getLastPathSegment();
             if (name == null) name = "file_" + System.currentTimeMillis();
+            int slash = name.lastIndexOf('/');
+            if (slash >= 0) name = name.substring(slash + 1);
 
             Engine.Job job = new Engine.Job();
             job.uri = u;
@@ -149,6 +319,8 @@ public class MainActivity extends Activity {
                 arr.put(o);
             } catch (Exception ignored) { }
         }
+        if (arr.length() == 0) return;
+        persistQueue();
         js("Sq.onFiles(" + JSONObject.quote(arr.toString()) + ")");
     }
 
@@ -161,6 +333,7 @@ public class MainActivity extends Activity {
         }
         busy = true;
         cancelled = false;
+        Engine.resetCancel();
         keepAwake(true);
 
         Thread t = new Thread(new Runnable() {
@@ -215,7 +388,8 @@ public class MainActivity extends Activity {
 
             Runnable task = new Runnable() {
                 public void run() {
-                    if (cancelled) return;
+                    // Between files: nothing new starts once cancel has been tapped.
+                    if (cancelled || Engine.cancelled()) return;
                     results[index] = runOne(index, job);
                 }
             };
@@ -230,12 +404,23 @@ public class MainActivity extends Activity {
                 light.awaitTermination(200, TimeUnit.MILLISECONDS);
                 codec.awaitTermination(200, TimeUnit.MILLISECONDS);
                 if (cancelled) {
+                    // The flag is checked inside the codec loop too, so this returns
+                    // within a frame or two instead of after the whole transcode.
                     light.shutdownNow();
                     codec.shutdownNow();
+                    light.awaitTermination(4, TimeUnit.SECONDS);
+                    codec.awaitTermination(6, TimeUnit.SECONDS);
                     break;
                 }
             }
         } catch (InterruptedException ignored) { }
+
+        final boolean stopped = cancelled || Engine.cancelled();
+        if (stopped) {
+            // No half-written file in Downloads/Squeeze, no scratch left behind.
+            Engine.sweepPartials(this);
+            Engine.resetCancel();
+        }
 
         JSONArray done = new JSONArray();
         long totalSaved = 0;
@@ -250,11 +435,15 @@ public class MainActivity extends Activity {
             JSONObject summary = new JSONObject();
             summary.put("files", done);
             summary.put("saved", totalSaved);
+            if (stopped) summary.put("cancelled", true);
             js("Sq.onDone(" + JSONObject.quote(summary.toString()) + ")");
         } catch (Exception ignored) { }
 
         busy = false;
         keepAwake(false);
+
+        if (stopped) persistQueue();      // the queue is what the user retries with
+        else prefs().edit().remove(KEY_QUEUE).apply();
     }
 
     /** One job, on whichever lane it landed on. Returns its result row (or null). */
@@ -288,6 +477,8 @@ public class MainActivity extends Activity {
         try {
             r = Engine.compress(MainActivity.this, job, cb);
         } catch (Throwable t) {
+            // A cancel is not a failure: the row goes back to waiting, not to "failed".
+            if (Engine.isCancel(t)) return null;
             String m = t.getMessage();
             err = (m != null && m.length() > 0) ? m : t.getClass().getSimpleName();
         }
@@ -308,7 +499,11 @@ public class MainActivity extends Activity {
             }
 
             long out = r.out;
+            // The engine's own note ("AAC 96 kbps", "Smallest reachable is 38 MB") is
+            // the most useful line in the row, so it goes out with the result.
+            if (r.note != null) js("Sq.onNote(" + index + "," + JSONObject.quote(r.note) + ")");
             js(progressJson(index, "done", 100, out, null, 0));
+            if (r.uri != null) lastOutput = r.uri;
 
             JSONObject o = new JSONObject();
             o.put("index", index);
@@ -316,6 +511,7 @@ public class MainActivity extends Activity {
             o.put("out", out);
             o.put("name", r.name != null ? r.name : job.name);
             if (r.note != null) o.put("note", r.note);
+            if (r.codec != null) o.put("codec", r.codec);
             return o;
         } catch (Exception ignored) {
             return null;
@@ -395,6 +591,47 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Downloads/Squeeze, opened the way the system file manager understands. */
+    private void openOutputFolder() {
+        // 1. The Downloads collection itself, as a directory document.
+        if (tryView(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                DocumentsContract.Document.MIME_TYPE_DIR)) return;
+
+        // 2. The Squeeze folder inside it, as a document tree node.
+        Uri tree = DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents", "primary:Download/Squeeze");
+        if (tryView(tree, DocumentsContract.Document.MIME_TYPE_DIR)) return;
+
+        // 3. The newest file we actually produced — always something real to open.
+        if (lastOutput != null) {
+            if (tryView(lastOutput, Engine.mimeOf(lastOutput.getLastPathSegment()))) return;
+            if (tryView(lastOutput, "*/*")) return;
+        }
+
+        // 4. A picker rooted at Downloads, so the user still lands in the right place.
+        try {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            startActivity(i);
+            return;
+        } catch (Exception ignored) { }
+
+        js("Sq.onError('No file manager on this device to open Downloads/Squeeze')");
+    }
+
+    private boolean tryView(Uri uri, String mime) {
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW);
+            i.setDataAndType(uri, mime);
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(i);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private void keepAwake(boolean on) {
         try {
             if (on) {
@@ -409,6 +646,7 @@ public class MainActivity extends Activity {
                 wake = null;
             }
         } catch (Exception ignored) { }
+        pushAwake();
     }
 
     @Override
@@ -451,11 +689,20 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void cancel() {
             cancelled = true;
+            Engine.requestCancel();
         }
 
         @JavascriptInterface
         public void clearQueue() {
             queue.clear();
+            prefs().edit().remove(KEY_QUEUE).apply();
+        }
+
+        @JavascriptInterface
+        public void openOutputFolder() {
+            runOnUiThread(new Runnable() {
+                public void run() { MainActivity.this.openOutputFolder(); }
+            });
         }
 
         @JavascriptInterface

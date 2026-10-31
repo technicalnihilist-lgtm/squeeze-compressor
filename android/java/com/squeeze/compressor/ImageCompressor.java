@@ -113,6 +113,7 @@ final class ImageCompressor {
             for (int di = 0; di < dims.length && !done; di++) {
                 Bitmap work = scaler.at(base, dims[di]);
                 for (int qi = 0; qi < quals.length; qi++) {
+                    Engine.checkCancel();
                     int q = quals[qi];
                     long sz = encode(work, fmt, q, trial);
                     step++;

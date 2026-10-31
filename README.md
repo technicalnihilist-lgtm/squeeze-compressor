@@ -12,13 +12,23 @@ And you do not have to take any of that on trust: there is a **built-in self-tes
 
 ## Screenshots
 
-| Queue &amp; target size | Compressing | Done |
+| Queue &amp; target size | Compressing (cancel + live note) | Done |
 |---|---|---|
 | <img src="screenshots/home.png" width="240"> | <img src="screenshots/compressing.png" width="240"> | <img src="screenshots/done.png" width="240"> |
 
 | Self-test | Settings |
 |---|---|
 | <img src="screenshots/selftest.png" width="240" alt="Self-test result"> | <img src="screenshots/settings.png" width="240" alt="Settings"> |
+
+## Cancel, share, and pick up where you left off
+
+A long transcode is easy to start and hard to take back, so cancel is real rather than cosmetic. While a job runs the main button turns into **Cancel**; tapping it sets a flag that the worker checks between files *and* inside the encode loop itself, so a video transcode unwinds between two frames instead of running to the end. Half-written scratch files are deleted, pending entries are removed from `Downloads/Squeeze`, and every unfinished file goes straight back into the queue — ready to retry with a different target, no re-picking.
+
+Each finished row also keeps the engine's own note: `H.264 1280×720 · 30 fps · 812 kbps`, `AAC 96 kbps`, `Lossless re-compression of 61 entries`, or `Smallest reachable is 38 MB` when the target was physically out of reach. It is the engine's measurement, not a decoration.
+
+Squeeze registers itself as a share target and an "open with" handler, so **Share → Squeeze** from Gallery, Files or a chat app drops the file straight into the queue. The queue itself is kept across restarts — close the app mid-job, reopen it, and the same files are waiting. A share grant that expired in the meantime is dropped rather than failing later.
+
+While a job is running a small pill in the footer says the screen stays awake, which reflects the actual wake lock: the display is held on and a partial wake lock keeps the CPU going, so a locked phone does not quietly stall the encoder.
 
 ## Install
 
