@@ -8,6 +8,8 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
@@ -15,6 +17,7 @@ import android.provider.OpenableColumns;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -479,14 +482,11 @@ public class MainActivity extends Activity {
         } catch (Throwable t) {
             // A cancel is not a failure: the row goes back to waiting, not to "failed".
             if (Engine.isCancel(t)) return null;
-            // Never surface a bare exception: say what happened and what to do next.
-            err = Fault.explain(t, job);
+            String m = t.getMessage();
+            err = (m != null && m.length() > 0) ? m : t.getClass().getSimpleName();
         }
         if (r != null && !r.ok) err = r.error;
-        if (r == null && err == null) {
-            err = "Nothing was written for this file — the encoder stopped without an output. "
-                    + "Try Smallest mode, or add the file again.";
-        }
+        if (r == null && err == null) err = "Compression failed";
 
         try {
             if (err != null) {
@@ -652,10 +652,34 @@ public class MainActivity extends Activity {
         pushAwake();
     }
 
+    /**
+     * Back belongs to the page: it closes an open sheet, otherwise it plays the close
+     * animation and calls Native.finish() when it is done. The native side only
+     * decides when there is no page to ask.
+     */
     @Override
     public void onBackPressed() {
-        js("(function(){var s=document.querySelector('.sheet.on');if(s){closeSheets();}else{}})()");
-        super.onBackPressed();
+        if (web == null || !pageReady) {
+            super.onBackPressed();
+            return;
+        }
+        web.evaluateJavascript(
+                "(function(){return !!document.querySelector('.sheet.on')})()",
+                new ValueCallback<String>() {
+                    public void onReceiveValue(String v) {
+                        if ("true".equals(v)) {
+                            js("closeSheets()");
+                            return;
+                        }
+                        js("Sq.onBack()");
+                        // Safety net: a page that never calls finish() must not trap the user.
+                        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                            public void run() {
+                                if (!isFinishing()) finish();
+                            }
+                        }, 1500);
+                    }
+                });
     }
 
     @Override
@@ -693,6 +717,21 @@ public class MainActivity extends Activity {
         public void cancel() {
             cancelled = true;
             Engine.requestCancel();
+        }
+
+        /** Called by the page once its close animation has played. */
+        @JavascriptInterface
+        public void finish() {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    if (busy) {
+                        // Exiting mid-job must not leave a half-written file behind.
+                        cancelled = true;
+                        Engine.requestCancel();
+                    }
+                    MainActivity.this.finish();
+                }
+            });
         }
 
         @JavascriptInterface

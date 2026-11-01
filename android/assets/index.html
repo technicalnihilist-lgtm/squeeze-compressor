@@ -21,6 +21,9 @@
   --shadow:0 18px 40px rgba(0,0,0,.45);
   /* driven by the motion engine in JS */
   --mx:0;--my:0;--tilt:0;--lit:0;
+  /* bounce + glass, driven by the settings sheet */
+  --bs:.7;--spring:cubic-bezier(.3,1.4,.5,1);--spring-soft:cubic-bezier(.3,1.15,.5,1);
+  --g-dark:.18;--g-tint:.085;--g-blur:22px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%}
@@ -66,8 +69,8 @@ body{
 .brand p{margin:1px 0 0;font-size:11.5px;color:var(--dim);font-weight:500;letter-spacing:0}
 .icon-btn{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;cursor:pointer;
   background:var(--glass);border:1px solid var(--stroke);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  transition:transform .18s ease,background .18s ease}
-.icon-btn:active{transform:scale(.92);background:var(--glass2)}
+  transition:scale .6s var(--spring),background .18s ease}
+.icon-btn:active{scale:.86;background:var(--glass2);transition-duration:.1s,.18s}
 
 /* ---------- glass card ---------- */
 .card{position:relative;border-radius:22px;padding:16px;
@@ -88,8 +91,9 @@ body{
 .chips{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:14px}
 .chip{padding:9px 0;text-align:center;border-radius:12px;font-size:12.5px;font-weight:600;
   color:var(--dim);background:rgba(255,255,255,.05);border:1px solid var(--stroke);cursor:pointer;
-  transition:all .18s ease}
-.chip:active{transform:scale(.95)}
+  transition:scale .55s var(--spring),background .18s,color .18s,box-shadow .18s}
+.chip:active{scale:.9;transition-duration:.1s,.18s,.18s,.18s}
+.chip.on{animation:pop .6s var(--spring)}
 .chip.on{color:#04121a;background:linear-gradient(120deg,var(--mint),var(--sky));border-color:transparent;
   box-shadow:0 8px 20px rgba(56,189,248,.3)}
 
@@ -97,9 +101,11 @@ body{
 .seg{display:flex;gap:5px;margin-top:12px;padding:5px;border-radius:15px;background:rgba(0,0,0,.28);
   border:1px solid rgba(255,255,255,.07)}
 .seg button{flex:1;padding:9px 4px;border:0;border-radius:11px;background:transparent;color:var(--dim);
-  font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;transition:all .2s ease;letter-spacing:-.01em}
+  font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;transition:color .2s,background .2s,box-shadow .2s,scale .55s var(--spring);letter-spacing:-.01em}
 .seg button.on{color:#fff;background:linear-gradient(150deg,rgba(255,255,255,.2),rgba(255,255,255,.07));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 4px 14px rgba(0,0,0,.35)}
+.seg button:active{scale:.92}
+.seg button.on{animation:pop .6s var(--spring)}
 .hint{margin:11px 2px 0;font-size:11.5px;line-height:1.5;color:var(--dim)}
 
 /* ---------- add button ---------- */
@@ -107,15 +113,15 @@ body{
   justify-content:center;gap:9px;font-family:inherit;font-size:14.5px;font-weight:650;color:#04121a;
   background:linear-gradient(120deg,var(--mint) 0%,var(--sky) 55%,var(--violet) 130%);
   border:0;box-shadow:0 14px 34px rgba(56,189,248,.32),inset 0 1px 0 rgba(255,255,255,.5);
-  transition:transform .18s ease,filter .18s ease}
-.add:active{transform:scale(.975);filter:brightness(1.06)}
+}
+.add:active{scale:.95;transition-duration:.22s,.1s}
 .add svg{flex:none}
 
 /* ---------- self-test ---------- */
 .test-card{display:flex;align-items:center;gap:12px;margin-top:12px;padding:13px 14px;border-radius:18px;cursor:pointer;
   background:linear-gradient(150deg,rgba(94,234,212,.11),rgba(56,189,248,.05));
-  border:1px solid rgba(94,234,212,.22);transition:transform .18s ease}
-.test-card:active{transform:scale(.985)}
+  border:1px solid rgba(94,234,212,.22)}
+.test-card:active{scale:.95;transition-duration:.22s,.1s}
 .tc-ico{width:34px;height:34px;border-radius:11px;flex:none;display:grid;place-items:center;
   background:linear-gradient(150deg,rgba(94,234,212,.3),rgba(56,189,248,.12));border:1px solid rgba(94,234,212,.3)}
 .tc-main{flex:1;min-width:0}
@@ -152,8 +158,8 @@ body{
 .file{display:flex;align-items:center;gap:12px;padding:12px;border-radius:18px;margin-bottom:9px;
   background:linear-gradient(150deg,rgba(255,255,255,.075),rgba(255,255,255,.028));
   border:1px solid var(--stroke);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.13);animation:in .35s cubic-bezier(.2,.8,.3,1) both}
-@keyframes in{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.13);animation:in .7s var(--spring) both}
+@keyframes in{from{opacity:0;translate:0 calc(22px*var(--bs));scale:calc(1 - .1*var(--bs))}to{opacity:1;translate:0 0;scale:1}}
 .badge{width:42px;height:42px;border-radius:13px;flex:none;display:grid;place-items:center;position:relative;
   font-size:9px;font-weight:800;letter-spacing:.02em;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .badge i{position:absolute;inset:0;border-radius:13px;opacity:.9}
@@ -197,8 +203,8 @@ body{
   color:#04121a;cursor:pointer;letter-spacing:-.02em;
   background:linear-gradient(120deg,var(--mint),var(--sky) 60%,var(--violet));
   box-shadow:0 14px 34px rgba(56,189,248,.3),inset 0 1px 0 rgba(255,255,255,.5);
-  transition:transform .18s ease,opacity .2s}
-.go:active{transform:scale(.98)}
+  transition:scale .6s var(--spring),opacity .2s}
+.go:active{scale:.94;transition-duration:.1s,.2s}
 .go[disabled]{opacity:.4;box-shadow:none}
 .go.cancel{color:#2b0a10;background:linear-gradient(120deg,#fb7185,#f87171 60%,#f472b6);
   box-shadow:0 14px 34px rgba(248,113,113,.26),inset 0 1px 0 rgba(255,255,255,.45)}
@@ -213,15 +219,28 @@ body{
 .fnote b{color:rgba(94,234,212,.85);font-weight:700;flex:none}
 
 /* ---------- sheets ---------- */
-.scrim{position:fixed;inset:0;z-index:20;background:rgba(2,5,12,.6);backdrop-filter:blur(6px);
-  -webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .28s}
+.scrim{position:fixed;inset:0;z-index:20;background:rgba(2,5,12,.3);backdrop-filter:blur(3px);
+  -webkit-backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .4s ease}
 .scrim.on{opacity:1;pointer-events:auto}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;border-radius:26px 26px 0 0;padding:10px 18px calc(env(safe-area-inset-bottom,0px) + 20px);
-  max-height:88vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch;
-  background:linear-gradient(180deg,rgba(26,32,52,.96),rgba(12,16,28,.99));
-  border-top:1px solid var(--stroke2);box-shadow:0 -20px 60px rgba(0,0,0,.6);
-  transform:translateY(102%);transition:transform .34s cubic-bezier(.22,.9,.28,1)}
-.sheet.on{transform:none}
+/* iOS 26 style liquid glass: floating, translucent, bright rim, light follows the finger */
+.sheet{position:fixed;left:10px;right:10px;bottom:calc(env(safe-area-inset-bottom,0px) + 10px);z-index:21;
+  border-radius:36px;padding:10px 20px 22px;max-height:84vh;overflow-y:auto;overscroll-behavior:contain;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;transform-origin:50% 100%;
+  background:
+    radial-gradient(320px circle at calc(50% + var(--mx) * 45%) calc(10% + var(--my) * 20%),
+      rgba(255,255,255,calc(.07 + .16 * var(--lit))),transparent 70%),
+    linear-gradient(150deg,rgba(255,255,255,calc(var(--g-tint) * 1.7)),rgba(255,255,255,calc(var(--g-tint) * .3)) 42%,rgba(255,255,255,var(--g-tint))),
+    rgba(8,12,24,var(--g-dark));
+  -webkit-backdrop-filter:blur(var(--g-blur)) saturate(190%) brightness(1.08);
+  backdrop-filter:blur(var(--g-blur)) saturate(190%) brightness(1.08);
+  border:1px solid rgba(255,255,255,.2);
+  box-shadow:inset 0 1.5px 1px rgba(255,255,255,.55),inset 1.5px 0 1px -.5px rgba(255,255,255,.3),
+    inset -1.5px 0 1px -.5px rgba(160,200,255,.24),inset 0 -1.5px 1px rgba(255,255,255,.14),
+    inset 0 0 28px rgba(255,255,255,.05),0 28px 70px rgba(0,0,0,.42),0 2px 10px rgba(0,0,0,.2);
+  transform:translateY(calc(100% + 40px)) scale(.9);opacity:0;visibility:hidden;
+  transition:transform .38s cubic-bezier(.5,0,.8,.35),opacity .26s ease .06s,visibility 0s .4s}
+.sheet.on{transform:none;opacity:1;visibility:visible;
+  transition:transform .85s var(--spring-soft),opacity .2s ease,visibility 0s}
 .grab{width:38px;height:4px;border-radius:9px;background:rgba(255,255,255,.22);margin:6px auto 16px}
 .sheet h3{margin:0 0 4px;font-size:17px;font-weight:700;letter-spacing:-.03em}
 .sheet p.sub{margin:0 0 16px;font-size:12px;color:var(--dim);line-height:1.5}
@@ -230,11 +249,15 @@ body{
 .row .k{color:var(--txt);font-weight:550}
 .row .v{color:var(--dim);font-size:12.5px}
 .sw{width:46px;height:27px;border-radius:99px;background:rgba(255,255,255,.14);position:relative;cursor:pointer;transition:background .2s}
-.sw:after{content:"";position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:transform .22s cubic-bezier(.3,1.4,.5,1);box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.sw:after{content:"";position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:transform .55s var(--spring),width .3s var(--spring);box-shadow:0 2px 6px rgba(0,0,0,.35)}
 .sw.on{background:linear-gradient(120deg,var(--mint),var(--sky))}
 .sw.on:after{transform:translateX(19px)}
+.sw:active:after{width:28px}
+.sw.on:active:after{transform:translateX(12px)}
 .sheet-btn{width:100%;margin-top:16px;padding:15px;border-radius:16px;border:1px solid var(--stroke2);
-  background:var(--glass2);color:var(--txt);font-family:inherit;font-size:14px;font-weight:650;cursor:pointer}
+  background:var(--glass2);color:var(--txt);font-family:inherit;font-size:14px;font-weight:650;cursor:pointer;
+  transition:scale .6s var(--spring)}
+.sheet-btn:active{scale:.95;transition-duration:.1s}
 
 /* done card */
 .done-card{text-align:center;padding:8px 6px 0}
@@ -255,7 +278,7 @@ body{
   transform:perspective(1100px)
             rotateX(calc(var(--my) * var(--tilt) * -1deg))
             rotateY(calc(var(--mx) * var(--tilt) * 1deg));
-  transition:transform .22s cubic-bezier(.2,.8,.3,1)}
+  transition:transform .22s cubic-bezier(.2,.8,.3,1),scale .6s var(--spring)}
 /* The light that follows your finger: the depth effect's second half. */
 .card:after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
   opacity:var(--lit);transition:opacity .3s ease;
@@ -280,11 +303,31 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
 input[type=range]:disabled::-webkit-slider-thumb{background:rgba(255,255,255,.55)}
 
 /* toast */
-.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 96px);transform:translate(-50%,14px);
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 96px);transform:translate(-50%,26px) scale(.9);
   z-index:40;padding:11px 16px;border-radius:14px;font-size:12.5px;font-weight:600;color:var(--txt);
   background:rgba(28,34,54,.95);border:1px solid var(--stroke2);box-shadow:var(--shadow);
-  opacity:0;pointer-events:none;transition:all .25s ease;max-width:88vw;text-align:center}
-.toast.on{opacity:1;transform:translate(-50%,0)}
+  opacity:0;pointer-events:none;transition:opacity .25s ease,transform .65s var(--spring);max-width:88vw;text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0) scale(1)}
+/* ---------- bounce engine: app open / close, sheets, presses ---------- */
+@keyframes pop{0%{scale:.84}100%{scale:1}}
+@keyframes launch{
+  from{opacity:0;translate:0 calc(64px * var(--bs));scale:calc(1 - var(--sa,.16) * var(--bs))}
+  to{opacity:1;translate:0 0;scale:1}}
+@keyframes leave{
+  0%{opacity:1;translate:0 0;scale:1}
+  26%{opacity:1;translate:0 calc(-12px * var(--bs));scale:calc(1 + .04 * var(--bs))}
+  100%{opacity:0;translate:0 calc(70px * var(--bs) + 24px);scale:calc(1 - var(--sa,.16) * var(--bs) - .06)}}
+@keyframes rise{from{opacity:0;translate:0 calc(30px * var(--bs));scale:calc(1 - .05 * var(--bs))}to{opacity:1;translate:0 0;scale:1}}
+@keyframes tickpop{from{opacity:0;scale:.2}to{opacity:1;scale:1}}
+@keyframes bgIn{from{opacity:0;scale:1.3}to{opacity:1;scale:1}}
+.stag{animation:launch .9s var(--spring) backwards;animation-delay:calc(var(--i,0) * 65ms + 80ms)}
+.top{--sa:.06}.foot{--sa:.04}
+body.closing .stag{animation:leave .44s cubic-bezier(.4,0,.7,.4) both;
+  animation-delay:calc((var(--n,8) - var(--i,0)) * 32ms)}
+.bg{animation:bgIn 1.5s cubic-bezier(.2,.7,.2,1) backwards;transition:opacity .6s ease}
+body.closing .bg{opacity:0;transition-delay:.12s}
+.sheet.on>*{animation:rise .8s var(--spring) backwards;animation-delay:calc(min(var(--k,0),12) * 28ms + 150ms)}
+.sheet.on .tick{animation:tickpop 1s var(--spring) .35s backwards}
 </style>
 </head>
 <body>
@@ -387,7 +430,21 @@ input[type=range]:disabled::-webkit-slider-thumb{background:rgba(255,255,255,.55
     <div class="sl-top"><span class="k">Parallax strength</span><span class="v" id="v-par">55%</span></div>
     <input type="range" id="r-par" min="0" max="100" value="55" oninput="setMotion('parAmt', this.value)">
   </div>
-  <div class="hint" style="margin:9px 2px 4px">Depth tilts the cards towards your finger and slides the light across them; parallax moves the backdrop at its own pace as you scroll. Both are a single transform per frame — no extra battery, and both stay off if you switch them off.</div>
+  <div class="row"><span class="k">Tilt with the phone (gyro)</span><span class="sw on" id="sw-gyro" onclick="toggleMotion('gyro')"></span></div>
+
+  <div class="sec-label">Bounce</div>
+  <div class="row"><span class="k">Bounce open &amp; close</span><span class="sw on" id="sw-bounce" onclick="toggleMotion('bounce')"></span></div>
+  <div class="row slider" id="row-bounce">
+    <div class="sl-top"><span class="k">Bounce strength</span><span class="v" id="v-bounce">70%</span></div>
+    <input type="range" id="r-bounce" min="0" max="100" value="70" oninput="setMotion('bounceAmt', this.value)" onchange="previewBounce()">
+  </div>
+
+  <div class="sec-label">Liquid glass</div>
+  <div class="row slider" id="row-glass">
+    <div class="sl-top"><span class="k">Glass transparency</span><span class="v" id="v-glass">60%</span></div>
+    <input type="range" id="r-glass" min="0" max="100" value="60" oninput="setMotion('glass', this.value)">
+  </div>
+  <div class="hint" style="margin:9px 2px 4px">Depth tilts the cards towards your finger (or your phone) and slides the light across them; parallax moves the backdrop at its own pace. Bounce springs the app, sheets and buttons in and out. Higher transparency lets more of the app show through the glass.</div>
   <div class="row"><span class="k">Output folder</span><span class="v">Downloads / Squeeze</span></div>
   <div class="row"><span class="k">Free space</span><span class="v" id="v-free">—</span></div>
   <div class="row"><span class="k">Encoders on this device</span><span class="v" id="v-codecs">checking…</span></div>
@@ -419,7 +476,7 @@ input[type=range]:disabled::-webkit-slider-thumb{background:rgba(255,255,255,.55
 <div class="sheet" id="sheet-test">
   <div class="grab"></div>
   <h3>Engine self-test</h3>
-  <p class="sub" id="testSub">Squeeze builds its own input on this device — a real H.264 + AAC clip, a 2400 × 1600 image and a 12-page PDF — and pushes all three through the same engine your files go through, at a 20 MB target.</p>
+  <p class="sub" id="testSub">Squeeze builds its own input on this device — a real H.264 + AAC clip and a 2400 × 1600 image — and pushes both through the same engine your files go through, at a 20 MB target.</p>
   <div id="testBody"></div>
   <button class="sheet-btn" id="testRun" onclick="runSelfTest()">Run again</button>
   <button class="sheet-btn" onclick="closeSheets()">Close</button>
@@ -446,7 +503,7 @@ const S = {
 
 const TARGETS = [20, 50, 100, 150, 250, 500];
 const MODE_HINT = {
-  lossless: 'Bit-for-bit where the format allows. Photos stay pixel-identical, archives are re-deflated, PDFs are rewritten losslessly, nothing is re-encoded lossily.',
+  lossless: 'Bit-for-bit where the format allows. Photos stay pixel-identical, archives are re-deflated, nothing is re-encoded lossily.',
   balanced: 'Visually lossless — video keeps full frame rate and audio is copied bit-for-bit.',
   smallest: 'Smallest possible file. Slightly softer video and photos, still very watchable.'
 };
@@ -476,10 +533,10 @@ function etaText(secs){
 }
 function kindOf(name){
   const e = (name.split('.').pop() || '').toLowerCase();
-  if(['mp4','mkv','mov','webm','avi','3gp','m4v','ts','m2ts','mts','flv','f4v','wmv'].includes(e)) return ['vid', e.toUpperCase()];
+  if(['mp4','mkv','mov','webm','avi','3gp','m4v','ts','flv','wmv'].includes(e)) return ['vid', e.toUpperCase()];
   if(['jpg','jpeg','png','webp','heic','heif','bmp','gif','tiff','avif'].includes(e)) return ['img', e.toUpperCase()];
-  if(['mp3','m4a','aac','wav','flac','ogg','opus','amr','aiff','aif','wma'].includes(e)) return ['aud', e.toUpperCase()];
-  if(['pdf','docx','xlsx','pptx','txt','epub','odt','ods','odp'].includes(e)) return ['doc', e.toUpperCase()];
+  if(['mp3','m4a','aac','wav','flac','ogg','opus','amr'].includes(e)) return ['aud', e.toUpperCase()];
+  if(['pdf','docx','xlsx','pptx','txt','epub'].includes(e)) return ['doc', e.toUpperCase()];
   if(['zip','rar','7z','tar','gz'].includes(e)) return ['zip', e.toUpperCase()];
   return ['any', e ? e.toUpperCase().slice(0,4) : 'FILE'];
 }
@@ -576,8 +633,10 @@ function openFolder(){
 
 /* ---------- sheets ---------- */
 function openSheet(id){
+  const sh = $('sheet-' + id);
+  [...sh.children].forEach((c, k) => c.style.setProperty('--k', k));   // stagger the rows in
   $('scrim').classList.add('on');
-  $('sheet-' + id).classList.add('on');
+  sh.classList.add('on');
 }
 function closeSheets(){
   $('scrim').classList.remove('on');
@@ -646,6 +705,12 @@ function reset(){
 
 /* called from Java */
 window.Sq = {
+  /* Call from Java's onBackPressed(): webView.evaluateJavascript("Sq.onBack()", null).
+     Closes an open sheet first, otherwise plays the close animation and exits. */
+  onBack(){
+    if(document.querySelector('.sheet.on')){ closeSheets(); return true; }
+    closeApp(); return true;
+  },
   onFiles(json){
     const list = JSON.parse(json);
     list.forEach(f => S.files.push({ name: f.name, size: f.size, out: 0, progress: 0, status: 'queued', uri: f.uri }));
@@ -855,9 +920,7 @@ const DEMO_TEST = {
     { label: 'Synthetic H.264+AAC clip', status: 'pass', detail: '23 MB · video + audio · built in 3 060 ms' },
     { label: 'Video compress', status: 'pass', detail: '23 MB → 19.6 MB · H.264 · 640×360 · 8.0 s · 8 420 ms' },
     { label: 'Output is a playable MP4', status: 'pass', detail: 'video + audio · 640×360 · 8.0 s' },
-    { label: 'Image compress', status: 'pass', detail: '2.9 MB → 412 KB · JPEG · 1920×1280 · 610 ms' },
-    { label: 'PDF compress', status: 'pass', detail: '148 KB → 21 KB · PDF rewritten · 12 streams re-deflated · metadata stripped · 96 ms' },
-    { label: 'Output is a valid PDF', status: 'pass', detail: 'header, cross-reference table and %%EOF all present' }
+    { label: 'Image compress', status: 'pass', detail: '2.9 MB → 412 KB · JPEG · 1920×1280 · 610 ms' }
   ]
 };
 
@@ -869,7 +932,7 @@ const DEMO = [
   { name: 'IMG_2048.HEIC', size: 12.4e6, out: 1.9e6, status: 'done', progress: 100,
     note: 'Visually lossless · 1920px · q82' },
   { name: 'Q3_Board_Deck.pdf', size: 38.2e6, out: 11.1e6, status: 'done', progress: 100,
-    note: 'PDF rewritten · 118 streams re-deflated · 204 unused objects dropped · metadata stripped' }
+    note: 'Lossless re-compression of 61 entries' }
 ];
 function addDemo(){
   DEMO.forEach(d => S.files.push({ ...d }));
@@ -900,37 +963,102 @@ function demoRun(){
   tick();
 }
 
-/* ---------- motion: 4D depth + parallax ---------- */
-/* Two cheap effects, both driven from one pointer position and one scroll offset:
-   depth tilts the glass cards towards the finger and slides a light across them,
-   parallax moves the backdrop blobs at their own rates. Everything is a single
-   transform per frame, written into CSS custom properties, so the layout never
-   reflows. */
+/* ---------- motion: 4D depth + parallax + bounce engine ---------- */
+/* Depth tilts the glass cards towards the finger (or the phone's gyro) and slides a
+   light across them; parallax moves the backdrop at its own rate. Bounce is a real
+   damped spring, sampled into a CSS linear() easing, so every open / close / press
+   in the app shares one physical feel that the Settings slider tunes. */
 const MK = 'squeeze.motion';
-const M = { depth: true, par: true, depthAmt: 60, parAmt: 55, mx: 0, my: 0, sy: 0 };
+const M = { depth: true, par: true, gyro: true, bounce: true,
+  depthAmt: 60, parAmt: 55, bounceAmt: 70, glass: 60,
+  mx: 0, my: 0, gx: 0, gy: 0, sy: 0, touching: false };
 const PLX = [];
+let closingApp = false;
 
 function loadMotion(){
   try{
     const o = JSON.parse(localStorage.getItem(MK) || '{}');
-    if(typeof o.depth === 'boolean') M.depth = o.depth;
-    if(typeof o.par === 'boolean') M.par = o.par;
-    if(typeof o.depthAmt === 'number') M.depthAmt = Math.max(0, Math.min(100, o.depthAmt));
-    if(typeof o.parAmt === 'number') M.parAmt = Math.max(0, Math.min(100, o.parAmt));
+    for(const k of ['depth','par','gyro','bounce']) if(typeof o[k] === 'boolean') M[k] = o[k];
+    for(const k of ['depthAmt','parAmt','bounceAmt','glass'])
+      if(typeof o[k] === 'number') M[k] = Math.max(0, Math.min(100, o[k]));
   }catch(e){}
-  // If the OS says "reduce motion", start with both off rather than overriding it.
+  // If the OS says "reduce motion", start with everything off rather than overriding it.
   try{
     if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){
-      M.depth = false; M.par = false;
+      M.depth = M.par = M.gyro = M.bounce = false;
     }
   }catch(e){}
 }
 function saveMotion(){
   try{
     localStorage.setItem(MK, JSON.stringify({
-      depth: M.depth, par: M.par, depthAmt: M.depthAmt, parAmt: M.parAmt
+      depth: M.depth, par: M.par, gyro: M.gyro, bounce: M.bounce,
+      depthAmt: M.depthAmt, parAmt: M.parAmt, bounceAmt: M.bounceAmt, glass: M.glass
     }));
   }catch(e){}
+}
+
+/* Damped spring x(t), t in 0..1, as a CSS linear() list. z = damping ratio. */
+function springCurve(z){
+  const w = 15, n = 48, pts = [];
+  for(let i = 0; i <= n; i++){
+    const t = i / n;
+    let v;
+    if(z < 1){
+      const wd = w * Math.sqrt(1 - z * z);
+      v = 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + (z * w / wd) * Math.sin(wd * t));
+    } else v = 1 - Math.exp(-w * t) * (1 + w * t);
+    pts.push(+v.toFixed(4));
+  }
+  pts[n] = 1;
+  return 'linear(' + pts.join(',') + ')';
+}
+function applyBounce(){
+  const root = document.documentElement;
+  const bs = M.bounce ? M.bounceAmt / 100 : 0;
+  const z = 0.9 - 0.45 * bs;            // 0 → barely springy, 100 → ~20% overshoot
+  const z2 = Math.min(0.98, z + 0.12);  // sheets get a softer spring
+  let ok = false;
+  try{ ok = !!(window.CSS && CSS.supports && CSS.supports('transition-timing-function', 'linear(0,1)')); }catch(e){}
+  root.style.setProperty('--bs', bs.toFixed(2));
+  root.style.setProperty('--spring', ok ? springCurve(z) : 'cubic-bezier(.3,' + (1 + 0.7 * bs).toFixed(2) + ',.5,1)');
+  root.style.setProperty('--spring-soft', ok ? springCurve(z2) : 'cubic-bezier(.3,' + (1 + 0.3 * bs).toFixed(2) + ',.5,1)');
+}
+/* Glass transparency: 100 = clearest. Lowers the dark base, the white tint and the blur. */
+function applyGlass(){
+  const root = document.documentElement, t = M.glass / 100;
+  root.style.setProperty('--g-dark', (0.05 + (1 - t) * 0.32).toFixed(3));
+  root.style.setProperty('--g-tint', (0.045 + (1 - t) * 0.10).toFixed(3));
+  root.style.setProperty('--g-blur', Math.round(12 + (1 - t) * 26) + 'px');
+}
+
+/* ---------- app open / close ---------- */
+function stagEls(){
+  return [...document.querySelectorAll('.top,.scroll>.card,.scroll>.add,.scroll>.test-card,.scroll>.qhead,#queue,.foot')];
+}
+function playLaunch(){
+  const els = stagEls();
+  document.body.classList.remove('closing');
+  els.forEach((e, i) => {
+    e.classList.remove('stag');
+    e.style.setProperty('--i', i);
+    e.style.setProperty('--n', els.length);
+  });
+  void document.body.offsetWidth;          // restart the animation
+  els.forEach(e => e.classList.add('stag'));
+}
+function previewBounce(){ playLaunch(); }
+function closeApp(){
+  if(closingApp) return;
+  closingApp = true;
+  closeSheets();
+  document.body.classList.add('closing');
+  setTimeout(() => {
+    const N = window.Native;
+    if(N && N.finish) N.finish();
+    else if(N && N.closeApp) N.closeApp();
+    else setTimeout(() => { closingApp = false; playLaunch(); }, 500);   // browser preview: reopen
+  }, 620);
 }
 
 function initMotion(){
@@ -948,6 +1076,7 @@ function initMotion(){
   const onMove = e => {
     const t = e.touches && e.touches.length ? e.touches[0] : e;
     if(t == null || t.clientX == null) return;
+    M.touching = true;
     M.mx = Math.max(-1, Math.min(1, (t.clientX / window.innerWidth) * 2 - 1));
     M.my = Math.max(-1, Math.min(1, (t.clientY / window.innerHeight) * 2 - 1));
     paint();
@@ -955,22 +1084,47 @@ function initMotion(){
   addEventListener('pointermove', onMove, { passive: true });
   addEventListener('pointerdown', onMove, { passive: true });
   addEventListener('touchmove', onMove, { passive: true });
-  addEventListener('touchend', easeBack, { passive: true });
-  addEventListener('pointerup', easeBack);
+  ['touchend', 'touchcancel', 'pointerup'].forEach(n => addEventListener(n, easeBack, { passive: true }));
+  addEventListener('deviceorientation', onGyro, { passive: true });
 
   const sc = $('scroll');
   if(sc) sc.addEventListener('scroll', () => { M.sy = sc.scrollTop; paint(); }, { passive: true });
+
+  // Coming back from the background: bounce the app in again.
+  document.addEventListener('visibilitychange', () => {
+    if(!document.hidden){ closingApp = false; playLaunch(); }
+  });
+  addEventListener('keydown', e => { if(e.key === 'Escape') window.Sq.onBack(); });
 
   paint();
   syncMotionUi();
 }
 
-/* Finger lifted: drift back to centre instead of snapping. */
-function easeBack(){
-  M.mx *= 0.3; M.my *= 0.3;
+/* Phone tilt → the same mx / my the finger drives. Small dead-zone keeps sensor noise from repainting. */
+function onGyro(e){
+  if(!M.gyro || M.touching || e.gamma == null) return;
+  const tx = Math.max(-1, Math.min(1, e.gamma / 30));
+  const ty = Math.max(-1, Math.min(1, ((e.beta || 0) - 50) / 30));   // ~50° is a natural holding angle
+  const nx = M.gx + (tx - M.gx) * 0.18, ny = M.gy + (ty - M.gy) * 0.18;
+  if(Math.abs(nx - M.gx) < 0.003 && Math.abs(ny - M.gy) < 0.003) return;
+  M.gx = nx; M.gy = ny; M.mx = nx; M.my = ny;
   paint();
-  if(Math.abs(M.mx) > 0.008 || Math.abs(M.my) > 0.008) requestAnimationFrame(easeBack);
-  else { M.mx = 0; M.my = 0; paint(); }
+}
+
+/* Finger lifted: drift back to centre (or to the gyro position) instead of snapping. */
+let easeId = 0;
+function easeBack(){
+  M.touching = false;
+  const id = ++easeId;
+  const step = () => {
+    if(id !== easeId || M.touching) return;
+    const tx = M.gyro ? M.gx : 0, ty = M.gyro ? M.gy : 0;
+    M.mx += (tx - M.mx) * 0.25; M.my += (ty - M.my) * 0.25;
+    paint();
+    if(Math.abs(tx - M.mx) > 0.008 || Math.abs(ty - M.my) > 0.008) requestAnimationFrame(step);
+    else { M.mx = tx; M.my = ty; paint(); }
+  };
+  step();
 }
 
 let paintQueued = false;
@@ -996,38 +1150,47 @@ function paint(){
 }
 
 function toggleMotion(what){
-  if(what === 'depth') M.depth = !M.depth;
-  if(what === 'par') M.par = !M.par;
+  M[what] = !M[what];
+  if(what === 'gyro'){
+    if(M.gyro){
+      try{ if(window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) DeviceOrientationEvent.requestPermission(); }catch(e){}
+    } else easeBack();
+  }
+  if(what === 'bounce'){ applyBounce(); if(M.bounce) setTimeout(previewBounce, 80); }
   saveMotion(); syncMotionUi(); paint();
 }
 function setMotion(key, val){
-  const n = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
-  if(key === 'depthAmt') M.depthAmt = n;
-  if(key === 'parAmt') M.parAmt = n;
+  M[key] = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
+  if(key === 'bounceAmt') applyBounce();
+  if(key === 'glass') applyGlass();
   saveMotion(); syncMotionUi(); paint();
 }
 function syncMotionUi(){
-  const swD = $('sw-depth'), swP = $('sw-par'), rD = $('r-depth'), rP = $('r-par');
-  if(!swD || !rD) return;
-  swD.classList.toggle('on', M.depth);
-  swP.classList.toggle('on', M.par);
-  rD.value = M.depthAmt; rP.value = M.parAmt;
-  rD.disabled = !M.depth; rP.disabled = !M.par;
-  rD.style.setProperty('--fill', M.depthAmt + '%');
-  rP.style.setProperty('--fill', M.parAmt + '%');
-  $('v-depth').textContent = M.depth ? M.depthAmt + '%' : 'off';
-  $('v-par').textContent = M.par ? M.parAmt + '%' : 'off';
-  $('row-depth').classList.toggle('dim', !M.depth);
-  $('row-par').classList.toggle('dim', !M.par);
+  if(!$('r-depth')) return;
+  for(const k of ['depth', 'par', 'gyro', 'bounce']) $('sw-' + k).classList.toggle('on', M[k]);
+  const sl = [['depthAmt', 'depth', 'r-depth', 'v-depth', 'row-depth'],
+              ['parAmt', 'par', 'r-par', 'v-par', 'row-par'],
+              ['bounceAmt', 'bounce', 'r-bounce', 'v-bounce', 'row-bounce'],
+              ['glass', null, 'r-glass', 'v-glass', 'row-glass']];
+  for(const [key, sw, r, v, row] of sl){
+    const on = sw ? M[sw] : true;
+    const el = $(r);
+    el.value = M[key]; el.disabled = !on;
+    el.style.setProperty('--fill', M[key] + '%');
+    $(v).textContent = on ? M[key] + '%' : 'off';
+    $(row).classList.toggle('dim', !on);
+  }
 }
 
 /* ---------- boot ---------- */
 (function boot(){
   const demo = /[?&]demo/.test(location.search) || !window.Native;
   loadMotion();
+  applyBounce(); applyGlass();
   initMotion();
   renderChips(); renderQueue(); recalc();
   $('modehint').textContent = MODE_HINT[S.mode];
+  playLaunch();
   if(demo){
     // screenshot / preview state
     const stage = (location.search.match(/stage=(\w+)/) || [])[1];
