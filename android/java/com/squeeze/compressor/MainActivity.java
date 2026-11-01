@@ -479,11 +479,14 @@ public class MainActivity extends Activity {
         } catch (Throwable t) {
             // A cancel is not a failure: the row goes back to waiting, not to "failed".
             if (Engine.isCancel(t)) return null;
-            String m = t.getMessage();
-            err = (m != null && m.length() > 0) ? m : t.getClass().getSimpleName();
+            // Never surface a bare exception: say what happened and what to do next.
+            err = Fault.explain(t, job);
         }
         if (r != null && !r.ok) err = r.error;
-        if (r == null && err == null) err = "Compression failed";
+        if (r == null && err == null) {
+            err = "Nothing was written for this file — the encoder stopped without an output. "
+                    + "Try Smallest mode, or add the file again.";
+        }
 
         try {
             if (err != null) {

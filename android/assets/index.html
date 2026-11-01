@@ -419,7 +419,7 @@ input[type=range]:disabled::-webkit-slider-thumb{background:rgba(255,255,255,.55
 <div class="sheet" id="sheet-test">
   <div class="grab"></div>
   <h3>Engine self-test</h3>
-  <p class="sub" id="testSub">Squeeze builds its own input on this device — a real H.264 + AAC clip and a 2400 × 1600 image — and pushes both through the same engine your files go through, at a 20 MB target.</p>
+  <p class="sub" id="testSub">Squeeze builds its own input on this device — a real H.264 + AAC clip, a 2400 × 1600 image and a 12-page PDF — and pushes all three through the same engine your files go through, at a 20 MB target.</p>
   <div id="testBody"></div>
   <button class="sheet-btn" id="testRun" onclick="runSelfTest()">Run again</button>
   <button class="sheet-btn" onclick="closeSheets()">Close</button>
@@ -446,7 +446,7 @@ const S = {
 
 const TARGETS = [20, 50, 100, 150, 250, 500];
 const MODE_HINT = {
-  lossless: 'Bit-for-bit where the format allows. Photos stay pixel-identical, archives are re-deflated, nothing is re-encoded lossily.',
+  lossless: 'Bit-for-bit where the format allows. Photos stay pixel-identical, archives are re-deflated, PDFs are rewritten losslessly, nothing is re-encoded lossily.',
   balanced: 'Visually lossless — video keeps full frame rate and audio is copied bit-for-bit.',
   smallest: 'Smallest possible file. Slightly softer video and photos, still very watchable.'
 };
@@ -476,10 +476,10 @@ function etaText(secs){
 }
 function kindOf(name){
   const e = (name.split('.').pop() || '').toLowerCase();
-  if(['mp4','mkv','mov','webm','avi','3gp','m4v','ts','flv','wmv'].includes(e)) return ['vid', e.toUpperCase()];
+  if(['mp4','mkv','mov','webm','avi','3gp','m4v','ts','m2ts','mts','flv','f4v','wmv'].includes(e)) return ['vid', e.toUpperCase()];
   if(['jpg','jpeg','png','webp','heic','heif','bmp','gif','tiff','avif'].includes(e)) return ['img', e.toUpperCase()];
-  if(['mp3','m4a','aac','wav','flac','ogg','opus','amr'].includes(e)) return ['aud', e.toUpperCase()];
-  if(['pdf','docx','xlsx','pptx','txt','epub'].includes(e)) return ['doc', e.toUpperCase()];
+  if(['mp3','m4a','aac','wav','flac','ogg','opus','amr','aiff','aif','wma'].includes(e)) return ['aud', e.toUpperCase()];
+  if(['pdf','docx','xlsx','pptx','txt','epub','odt','ods','odp'].includes(e)) return ['doc', e.toUpperCase()];
   if(['zip','rar','7z','tar','gz'].includes(e)) return ['zip', e.toUpperCase()];
   return ['any', e ? e.toUpperCase().slice(0,4) : 'FILE'];
 }
@@ -855,7 +855,9 @@ const DEMO_TEST = {
     { label: 'Synthetic H.264+AAC clip', status: 'pass', detail: '23 MB · video + audio · built in 3 060 ms' },
     { label: 'Video compress', status: 'pass', detail: '23 MB → 19.6 MB · H.264 · 640×360 · 8.0 s · 8 420 ms' },
     { label: 'Output is a playable MP4', status: 'pass', detail: 'video + audio · 640×360 · 8.0 s' },
-    { label: 'Image compress', status: 'pass', detail: '2.9 MB → 412 KB · JPEG · 1920×1280 · 610 ms' }
+    { label: 'Image compress', status: 'pass', detail: '2.9 MB → 412 KB · JPEG · 1920×1280 · 610 ms' },
+    { label: 'PDF compress', status: 'pass', detail: '148 KB → 21 KB · PDF rewritten · 12 streams re-deflated · metadata stripped · 96 ms' },
+    { label: 'Output is a valid PDF', status: 'pass', detail: 'header, cross-reference table and %%EOF all present' }
   ]
 };
 
@@ -867,7 +869,7 @@ const DEMO = [
   { name: 'IMG_2048.HEIC', size: 12.4e6, out: 1.9e6, status: 'done', progress: 100,
     note: 'Visually lossless · 1920px · q82' },
   { name: 'Q3_Board_Deck.pdf', size: 38.2e6, out: 11.1e6, status: 'done', progress: 100,
-    note: 'Lossless re-compression of 61 entries' }
+    note: 'PDF rewritten · 118 streams re-deflated · 204 unused objects dropped · metadata stripped' }
 ];
 function addDemo(){
   DEMO.forEach(d => S.files.push({ ...d }));

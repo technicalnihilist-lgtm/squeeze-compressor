@@ -38,8 +38,9 @@ import java.util.Random;
  *
  *   1. a synthetic H.264 + AAC clip, encoded on this device with MediaCodec,
  *   2. a synthetic 2400x1600 test image,
+ *   3. a synthetic multi-page PDF with uncompressed content streams,
  *
- * then pushes both through the exact same Engine.compress path a real file takes,
+ * then pushes all three through the exact same Engine.compress path a real file takes,
  * with the same 20 MB target, and reports the real byte counts, the codec that did
  * the work and the wall-clock time. Nothing is faked: if a step cannot run, the row
  * says so and the whole card fails.
@@ -283,7 +284,54 @@ final class SelfTest {
                     t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName());
         }
 
-        /* ---- 4. verdict ---- */
+        /* ---- 4. the PDF ---- */
+        File pdfIn = null;
+        File pdfOut = null;
+        try {
+            step.on("Compressing test PDF", 88);
+            pdfIn = File.createTempFile("sqselftest", ".pdf", Engine.workDir(ctx));
+            byte[] doc = Pdf.sample(12);
+            FileOutputStream pfo = new FileOutputStream(pdfIn);
+            try { pfo.write(doc); } finally { pfo.close(); }
+
+            Engine.Job job = new Engine.Job();
+            job.name = "squeeze_selftest.pdf";
+            job.uri = Uri.fromFile(pdfIn);
+            job.size = pdfIn.length();
+            job.target = TARGET;
+            job.selfTest = true;
+
+            long c0 = System.currentTimeMillis();
+            Engine.Result r = null;
+            String err = null;
+            try {
+                r = Engine.compress(ctx, job, null);
+            } catch (Throwable t) {
+                err = Fault.explain(t, job);
+            }
+            long ms = System.currentTimeMillis() - c0;
+
+            if (r == null || !r.ok) {
+                row(rows, "PDF compress", "fail",
+                        err != null ? err : (r != null && r.error != null ? r.error : "engine returned nothing"));
+            } else {
+                pdfOut = r.file;
+                long out = r.out > 0 ? r.out : (pdfOut != null ? pdfOut.length() : 0);
+                boolean shrank = out > 0 && out < job.size;
+                boolean valid = pdfOut != null && looksLikePdf(pdfOut);
+                row(rows, "PDF compress", (shrank && valid) ? "pass" : "fail",
+                        Engine.mb(job.size) + " → " + Engine.mb(out)
+                                + " · " + (r.note != null ? r.note : (r.codec != null ? r.codec : "?"))
+                                + " · " + ms + " ms");
+                row(rows, "Output is a valid PDF", valid ? "pass" : "fail",
+                        valid ? "header, cross-reference table and %%EOF all present"
+                                : "the rewritten file could not be re-read");
+            }
+        } catch (Throwable t) {
+            row(rows, "PDF compress", "fail", Fault.explain(t, null));
+        }
+
+        /* ---- 5. verdict ---- */
         int fails = 0;
         try {
             for (int i = 0; i < rows.length(); i++) {
@@ -301,7 +349,30 @@ final class SelfTest {
         delete(vidOut);
         delete(imgIn);
         delete(imgOut);
+        delete(pdfIn);
+        delete(pdfOut);
         return res;
+    }
+
+    /** A rewritten PDF is only useful if a reader can still find its cross-reference. */
+    private static boolean looksLikePdf(File f) {
+        if (f == null || f.length() < 64) return false;
+        byte[] head = new byte[8];
+        byte[] tail = new byte[(int) Math.min(2048, f.length())];
+        java.io.RandomAccessFile raf = null;
+        try {
+            raf = new java.io.RandomAccessFile(f, "r");
+            raf.readFully(head);
+            raf.seek(f.length() - tail.length);
+            raf.readFully(tail);
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (raf != null) try { raf.close(); } catch (Exception ignored) { }
+        }
+        String h = new String(head, java.nio.charset.StandardCharsets.ISO_8859_1);
+        String t = new String(tail, java.nio.charset.StandardCharsets.ISO_8859_1);
+        return h.startsWith("%PDF") && t.contains("%%EOF") && t.contains("startxref");
     }
 
     private static void row(JSONArray rows, String label, String status, String detail) {

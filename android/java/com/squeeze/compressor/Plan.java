@@ -21,8 +21,8 @@ final class Plan {
 
     private static final String IMG = "jpg jpeg png webp heic heif bmp tiff avif";
     private static final String GIF = "gif";
-    private static final String VID = "mp4 mkv mov webm avi 3gp m4v ts flv wmv";
-    private static final String AUD = "mp3 m4a aac wav flac ogg opus amr";
+    private static final String VID = "mp4 mkv mov webm avi 3gp m4v ts m2ts mts flv f4v wmv";
+    private static final String AUD = "mp3 m4a aac wav flac ogg opus amr aiff aif wma";
 
     private Plan() { }
 

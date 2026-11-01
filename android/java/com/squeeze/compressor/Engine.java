@@ -77,6 +77,8 @@ final class Engine {
          * Downloads/Squeeze, so proving the engine works never litters the phone.
          */
         boolean selfTest = false;
+        /** Set once the engine has begun work, so a lost file reads as "vanished", not "unreadable". */
+        boolean started;
     }
 
     static final class Result {
@@ -91,8 +93,14 @@ final class Engine {
     }
 
     private static final String IMG = "jpg jpeg png webp heic heif bmp gif tiff avif";
-    private static final String VID = "mp4 mkv mov webm avi 3gp m4v ts flv wmv";
-    private static final String AUD = "mp3 m4a aac wav flac ogg opus amr";
+    /**
+     * Every container the video engine accepts. The transport-stream family (.ts,
+     * .m2ts) and the Flash family (.flv, .f4v) used to fall through to the archive
+     * path and come back as a ZIP, which compressed nothing and was not playable.
+     */
+    private static final String VID = "mp4 mkv mov webm avi 3gp m4v ts m2ts mts flv f4v wmv";
+    /** .aiff/.aif are PCM and .wma is ASF audio — both used to land in the ZIP fallback. */
+    private static final String AUD = "mp3 m4a aac wav flac ogg opus amr aiff aif wma";
 
     static Result fail(String why) {
         Result r = new Result();
@@ -133,20 +141,27 @@ final class Engine {
             return fail("Not enough space — needs about " + mb(need) + ", only " + mb(free) + " free");
         }
 
+        job.started = true;
         Result r;
         if (has(IMG, e)) {
             r = ImageCompressor.run(ctx, job, p);
-            if (r == null) r = fail("This image could not be decoded (corrupt or unsupported)");
+            if (r == null) r = fail("This image could not be decoded — the header says " + e.toUpperCase(java.util.Locale.US)
+                    + " but no pixel data could be read. Re-export it, then add it again.");
         } else if (has(VID, e)) {
             r = VideoCompressor.run(ctx, job, p);
-            if (r == null) r = fail("This video could not be re-encoded — no usable video track");
+            if (r == null) r = fail(Fault.NO_TRACK);
         } else if (has(AUD, e)) {
             r = AudioCompressor.run(ctx, job, p);
-            if (r == null) r = fail("This audio file could not be re-encoded");
+            if (r == null) r = fail(Fault.NO_TRACK);
+        } else if (e.equals("pdf")) {
+            // A real PDF rewrite: re-deflate streams, drop dead objects, strip metadata.
+            r = PdfCompressor.run(ctx, job, p);
+            if (r == null) r = fail(String.format(java.util.Locale.US, Fault.HEADER, ".pdf"));
         } else {
-            // Archives, Office documents, PDFs and anything unknown: always lossless.
+            // Archives, Office documents and anything unknown: always lossless.
             r = Archiver.run(ctx, job, p);
-            if (r == null) r = fail("Could not read this file");
+            if (r == null) r = fail("Could not read this file — its format was not recognised. "
+                    + "Try opening it once in another app to confirm it is not corrupt.");
         }
         // A compressor that swallows exceptions must not turn a cancel into a result.
         checkCancel();
@@ -212,6 +227,12 @@ final class Engine {
             case "webm": return "video/webm";
             case "avi": return "video/x-msvideo";
             case "3gp": return "video/3gpp";
+            case "ts": case "m2ts": case "mts": return "video/mp2t";
+            case "flv": return "video/x-flv";
+            case "f4v": return "video/mp4";
+            case "wmv": return "video/x-ms-wmv";
+            case "aiff": case "aif": return "audio/aiff";
+            case "wma": return "audio/x-ms-wma";
             case "mp3": return "audio/mpeg";
             case "m4a": return "audio/mp4";
             case "aac": return "audio/aac";
