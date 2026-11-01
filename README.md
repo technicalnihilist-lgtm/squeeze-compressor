@@ -144,7 +144,7 @@ No `INTERNET` permission at all. The app physically cannot upload your files. No
 
 ## Build it yourself
 
-No Gradle, no AndroidX, no dependencies — `aapt2`, `javac`, `d8` and `apksigner` directly, and not a single third-party library, including for the PDF work. The whole app is about 4,300 lines, Java plus one HTML file.
+No Gradle, no AndroidX, no dependencies — `aapt2`, `javac`, `d8` and `apksigner` directly, and not a single third-party library, including for the PDF work. The whole app is about 5,850 lines — 4,800 of Java across twelve files, plus one 1,050-line HTML file.
 
 ```bash
 export ANDROID_SDK_ROOT=/path/to/android-sdk    # needs platforms;android-34, build-tools;34.0.0
