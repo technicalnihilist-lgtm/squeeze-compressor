@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="Squeeze">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0%" stop-color="#141024"/><stop offset="55%" stop-color="#1a1433"/><stop offset="100%" stop-color="#12101f"/>
+</linearGradient>
+<linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0%" stop-color="#6d5ae6"/><stop offset="100%" stop-color="#4f46e5"/>
+</linearGradient>
+<radialGradient id="b1" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#7c5cff" stop-opacity="0.55"/><stop offset="100%" stop-color="#7c5cff" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="b2" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#34d399" stop-opacity="0.40"/><stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="b3" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#ec4899" stop-opacity="0.42"/><stop offset="100%" stop-color="#ec4899" stop-opacity="0"/>
+</radialGradient>
+<clipPath id="card"><rect x="0" y="0" width="1280" height="320" rx="26"/></clipPath>
+</defs>
+<g clip-path="url(#card)">
+<rect width="1280" height="320" fill="url(#bg)"/>
+<circle cx="1180" cy="20" r="230" fill="url(#b1)"/>
+<circle cx="1230" cy="330" r="210" fill="url(#b3)"/>
+<circle cx="30" cy="330" r="200" fill="url(#b2)"/>
+<rect x="0.75" y="0.75" width="1278.5" height="318.5" rx="26" fill="none" stroke="#ffffff" stroke-opacity="0.10"/>
+</g>
+<text x="64" y="112" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="15" letter-spacing="4.5" font-weight="600" fill="#9d95d8">OPEN SOURCE ANDROID APP</text>
+<text x="62" y="178" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="58" font-weight="700" fill="#ffffff">Squeeze</text>
+<text x="64" y="216" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="22" fill="#b9b3dd">Target-size file compressor for Android — any format into 150 MB, lossless where the format allows…</text>
+<rect x="64" y="248" width="75" height="34" rx="17" fill="#ffffff" fill-opacity="0.09" stroke="#ffffff" stroke-opacity="0.16"/>
+<text x="101" y="270" text-anchor="middle" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="600" fill="#e7e3ff">Java</text>
+<rect x="150.8" y="248" width="105" height="34" rx="17" fill="#ffffff" fill-opacity="0.09" stroke="#ffffff" stroke-opacity="0.16"/>
+<text x="204" y="270" text-anchor="middle" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="600" fill="#e7e3ff">Android</text>
+<rect x="268.2" y="248" width="65" height="34" rx="17" fill="#ffffff" fill-opacity="0.09" stroke="#ffffff" stroke-opacity="0.16"/>
+<text x="300" y="270" text-anchor="middle" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="600" fill="#e7e3ff">APK</text>
+<rect x="344.79999999999995" y="248" width="136" height="34" rx="17" fill="#ffffff" fill-opacity="0.09" stroke="#ffffff" stroke-opacity="0.16"/>
+<text x="413" y="270" text-anchor="middle" font-family="Segoe UI,Helvetica,Arial,sans-serif" font-size="16" font-weight="600" fill="#e7e3ff">Compressor</text>
+</svg>
